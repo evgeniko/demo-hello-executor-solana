@@ -1,0 +1,42 @@
+{
+  "name": "demo-hello-executor-solana",
+  "version": "1.0.0",
+  "description": "SVM cross-chain Hello World demo using Wormhole Executor (Solana <-> Fogo)",
+  "type": "module",
+  "scripts": {
+    "build": "anchor build",
+    "test": "anchor test",
+    "e2e:test": "tsx e2e/test.ts"
+  },
+  "keywords": [
+    "wormhole",
+    "executor",
+    "cross-chain",
+    "solana",
+    "anchor",
+    "fogo"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.0",
+    "@solana/web3.js": "^1.95.0",
+    "@wormhole-foundation/sdk": "^3.9.0",
+    "@wormhole-foundation/sdk-base": "^3.9.0",
+    "@wormhole-foundation/sdk-definitions": "^3.9.0",
+    "@wormhole-foundation/sdk-solana": "^3.9.0",
+    "bs58": "^6.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.5",
+    "@types/chai": "^4.3.5",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "chai": "^4.3.7",
+    "mocha": "^10.2.0",
+    "ts-mocha": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

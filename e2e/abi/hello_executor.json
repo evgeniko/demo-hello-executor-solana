@@ -1,0 +1,646 @@
+{
+  "version": "0.1.0",
+  "name": "hello_executor",
+  "docs": [
+    "# Hello Executor",
+    "",
+    "A cross-chain Hello World application using Wormhole's Executor service",
+    "for automatic message relay between SVM chains (Solana <-> Fogo).",
+    "",
+    "## Program Instructions",
+    "* [`initialize`](initialize) - Initialize program config",
+    "* [`register_peer`](register_peer) - Register a peer contract on another chain",
+    "* [`send_greeting`](send_greeting) - Send a cross-chain greeting",
+    "* [`receive_greeting`](receive_greeting) - Receive and process a greeting",
+    "",
+    "## Program Accounts",
+    "* [Config] - Program configuration",
+    "* [Peer] - Registered peer contracts",
+    "* [Received] - Received messages (replay protection)",
+    "* [WormholeEmitter] - Program's Wormhole emitter"
+  ],
+  "instructions": [
+    {
+      "name": "initialize",
+      "docs": [
+        "Initialize the program config and create the Wormhole emitter.",
+        "",
+        "# Arguments",
+        "* `ctx` - Initialize context"
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true,
+          "docs": [
+            "The owner who initializes the config. Will be the owner of the program."
+          ]
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Config account that stores program configuration."
+          ]
+        },
+        {
+          "name": "wormholeProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Wormhole Core Bridge program."
+          ]
+        },
+        {
+          "name": "wormholeBridge",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Wormhole bridge data (config)."
+          ]
+        },
+        {
+          "name": "wormholeFeeCollector",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Wormhole fee collector account."
+          ]
+        },
+        {
+          "name": "wormholeEmitter",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Program's Wormhole emitter account."
+          ]
+        },
+        {
+          "name": "wormholeSequence",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "wormholeMessage",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "clock",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Clock sysvar."
+          ]
+        },
+        {
+          "name": "rent",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Rent sysvar."
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "System program."
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "registerPeer",
+      "docs": [
+        "Register a peer contract on another chain.",
+        "Only the owner can call this instruction.",
+        "",
+        "# Arguments",
+        "* `ctx` - RegisterPeer context",
+        "* `chain` - Wormhole chain ID of the peer",
+        "* `address` - Universal address of the peer contract"
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true,
+          "docs": [
+            "Owner of the program. Must match config.owner."
+          ]
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Config account. Verifies the owner."
+          ]
+        },
+        {
+          "name": "peer",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Peer account for the specified chain."
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "System program."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "chain",
+          "type": "u16"
+        },
+        {
+          "name": "address",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "sendGreeting",
+      "docs": [
+        "Send a cross-chain greeting message.",
+        "",
+        "This instruction:",
+        "1. Encodes the greeting as a payload",
+        "2. Publishes a message through Wormhole Core Bridge",
+        "3. Emits GreetingSent event",
+        "",
+        "Note: On SVM, the Executor relay is handled off-chain after VAA signing.",
+        "The caller should call the Executor API to request relay after this tx.",
+        "",
+        "# Arguments",
+        "* `ctx` - SendGreeting context",
+        "* `greeting` - The greeting message to send"
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "isMut": true,
+          "isSigner": true,
+          "docs": [
+            "Payer for the Wormhole fee and message account."
+          ]
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Config account with Wormhole addresses."
+          ]
+        },
+        {
+          "name": "wormholeProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Wormhole Core Bridge program."
+          ]
+        },
+        {
+          "name": "wormholeBridge",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Wormhole bridge data."
+          ]
+        },
+        {
+          "name": "wormholeFeeCollector",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Wormhole fee collector."
+          ]
+        },
+        {
+          "name": "wormholeEmitter",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Program's emitter account."
+          ]
+        },
+        {
+          "name": "wormholeSequence",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Emitter's sequence account."
+          ]
+        },
+        {
+          "name": "wormholeMessage",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "System program."
+          ]
+        },
+        {
+          "name": "clock",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Clock sysvar."
+          ]
+        },
+        {
+          "name": "rent",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Rent sysvar."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "greeting",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "receiveGreeting",
+      "docs": [
+        "Receive and process a cross-chain greeting.",
+        "",
+        "This instruction verifies the VAA and processes the greeting payload.",
+        "The Received account provides replay protection.",
+        "",
+        "# Arguments",
+        "* `ctx` - ReceiveGreeting context",
+        "* `vaa_hash` - Keccak256 hash of the verified VAA"
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "isMut": true,
+          "isSigner": true,
+          "docs": [
+            "Payer for creating the Received account."
+          ]
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Config account."
+          ]
+        },
+        {
+          "name": "wormholeProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Wormhole Core Bridge program."
+          ]
+        },
+        {
+          "name": "posted",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "The verified Wormhole VAA containing the greeting."
+          ]
+        },
+        {
+          "name": "peer",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Registered peer that sent this message."
+          ]
+        },
+        {
+          "name": "received",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Received account for replay protection.",
+            "Creating this account prevents the same message from being processed twice."
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "System program."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "vaaHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "docs": [
+        "Program configuration account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "docs": [
+              "Program's owner (can register peers)."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "wormhole",
+            "docs": [
+              "Wormhole program's relevant addresses."
+            ],
+            "type": {
+              "defined": "WormholeAddresses"
+            }
+          },
+          {
+            "name": "batchId",
+            "docs": [
+              "AKA nonce. Just zero, but saving this information anyway."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "finality",
+            "docs": [
+              "Consistency level for posted messages.",
+              "u8 representation of [Finality](wormhole_anchor_sdk::wormhole::Finality)."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Peer",
+      "docs": [
+        "Registered peer contract on another chain."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "chain",
+            "docs": [
+              "Wormhole chain ID of the peer."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "address",
+            "docs": [
+              "Universal address (32 bytes) of the peer contract."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Received",
+      "docs": [
+        "Received message account for replay protection.",
+        "",
+        "Creating this account prevents the same message from being processed twice.",
+        "The account stores the received greeting for reference."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "batchId",
+            "docs": [
+              "Batch ID from the VAA (usually 0)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "wormholeMessageHash",
+            "docs": [
+              "Keccak256 hash of the Wormhole message."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "message",
+            "docs": [
+              "The received greeting message."
+            ],
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WormholeEmitter",
+      "docs": [
+        "Program's Wormhole emitter account.",
+        "",
+        "This account is used to sign `wormhole::post_message` CPI calls.",
+        "The PDA acts as the emitter for all messages from this program."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "WormholeAddresses",
+      "docs": [
+        "Wormhole program related addresses stored in config."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bridge",
+            "docs": [
+              "[BridgeData](wormhole_anchor_sdk::wormhole::BridgeData) address."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "feeCollector",
+            "docs": [
+              "[FeeCollector](wormhole_anchor_sdk::wormhole::FeeCollector) address."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "sequence",
+            "docs": [
+              "[SequenceTracker](wormhole_anchor_sdk::wormhole::SequenceTracker) address."
+            ],
+            "type": "publicKey"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "GreetingReceived",
+      "fields": [
+        {
+          "name": "greeting",
+          "type": "string",
+          "index": false
+        },
+        {
+          "name": "senderChain",
+          "type": "u16",
+          "index": false
+        },
+        {
+          "name": "sender",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "index": false
+        },
+        {
+          "name": "sequence",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "GreetingSent",
+      "fields": [
+        {
+          "name": "greeting",
+          "type": "string",
+          "index": false
+        },
+        {
+          "name": "sequence",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "timestamp",
+          "type": "i64",
+          "index": false
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidWormholeConfig",
+      "msg": "InvalidWormholeConfig"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidWormholeFeeCollector",
+      "msg": "InvalidWormholeFeeCollector"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidWormholeSequence",
+      "msg": "InvalidWormholeSequence"
+    },
+    {
+      "code": 6003,
+      "name": "OwnerOnly",
+      "msg": "OwnerOnly"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidPeer",
+      "msg": "InvalidPeer"
+    },
+    {
+      "code": 6005,
+      "name": "UnknownEmitter",
+      "msg": "UnknownEmitter"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidMessage",
+      "msg": "InvalidMessage"
+    },
+    {
+      "code": 6007,
+      "name": "MessageTooLarge",
+      "msg": "MessageTooLarge"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidVaa",
+      "msg": "InvalidVaa"
+    },
+    {
+      "code": 6009,
+      "name": "AlreadyReceived",
+      "msg": "AlreadyReceived"
+    }
+  ]
+}

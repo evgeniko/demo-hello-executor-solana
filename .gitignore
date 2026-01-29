@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.env.*
+
+node_modules/
+
+target/
+.anchor/
+
+e2e/.env
+e2e/.env.*
