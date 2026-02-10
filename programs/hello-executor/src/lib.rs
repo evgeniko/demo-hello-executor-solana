@@ -62,7 +62,7 @@ pub mod hello_executor {
     pub fn resolve_execute_vaa_v1(
         ctx: Context<ExecuteVaaV1>,
         vaa_body: Vec<u8>,
-    ) -> Result<resolver::Resolver<resolver::InstructionGroups>> {
+    ) -> Result<resolver::ResolverType<resolver::ResolverInstructionGroups>> {
         resolver::handle_resolve(ctx, vaa_body)
     }
 

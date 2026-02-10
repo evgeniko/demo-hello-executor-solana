@@ -113,10 +113,10 @@ anchor deploy --provider.cluster devnet
 
 ```bash
 # Set RPC URL
-solana config set --url https://rpc.testnet.fogo.io
+solana config set --url https://testnet.fogo.io/rpc
 
 # Deploy
-anchor deploy --provider.cluster https://rpc.testnet.fogo.io
+anchor deploy --provider.cluster https://testnet.fogo.io/rpc
 
 # Note the program ID and update e2e/.env (HELLO_EXECUTOR_FOGO)
 ```

@@ -5,55 +5,19 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::InstructionData;
+use executor_account_resolver_svm::{
+    InstructionGroup, InstructionGroups, Resolver, SerializableAccountMeta,
+    SerializableInstruction, RESOLVER_PUBKEY_PAYER,
+};
 use solana_program::program::set_return_data;
-use wormhole_anchor_sdk::wormhole;
 
 use crate::{
     instructions::ExecuteVaaV1,
     state::{Config, Peer, Received},
 };
 
-// ============ Executor Resolver Types ============
-
-/// Placeholder for the relayer's payer account
-pub const RESOLVER_PUBKEY_PAYER: Pubkey =
-    Pubkey::new_from_array(*b"payer_00000000000000000000000000");
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct InstructionGroups(pub Vec<InstructionGroup>);
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct InstructionGroup {
-    pub instructions: Vec<SerializableInstruction>,
-    pub address_lookup_tables: Vec<Pubkey>,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct SerializableInstruction {
-    pub program_id: Pubkey,
-    pub accounts: Vec<SerializableAccountMeta>,
-    pub data: Vec<u8>,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct SerializableAccountMeta {
-    pub pubkey: Pubkey,
-    pub is_signer: bool,
-    pub is_writable: bool,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub enum Resolver<T> {
-    Resolved(T),
-    Missing(MissingAccounts),
-    Account(),
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct MissingAccounts {
-    pub accounts: Vec<Pubkey>,
-    pub address_lookup_tables: Vec<Pubkey>,
-}
+// Re-export types for lib.rs
+pub use executor_account_resolver_svm::{InstructionGroups as ResolverInstructionGroups, Resolver as ResolverType};
 
 // ============ Handlers ============
 
@@ -156,6 +120,8 @@ fn build_resolver_result(
     system_program_key: &Pubkey,
     vaa_body: &[u8],
 ) -> Result<Resolver<InstructionGroups>> {
+    use wormhole_anchor_sdk::wormhole;
+    
     let vaa_hash = solana_program::keccak::hashv(&[vaa_body]).to_bytes();
     let (emitter_chain, _emitter_address, sequence) = parse_vaa_body(vaa_body)?;
     
