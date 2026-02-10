@@ -6,10 +6,10 @@ skip-lint = false
 members = ["programs/hello-executor"]
 
 [programs.localnet]
-hello_executor = "He11oExec1111111111111111111111111111111111"
+hello_executor = "5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp"
 
 [programs.devnet]
-hello_executor = "He11oExec1111111111111111111111111111111111"
+hello_executor = "5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp"
 
 [registry]
 url = "https://api.apr.dev"

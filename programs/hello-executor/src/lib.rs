@@ -12,7 +12,7 @@ pub mod instructions;
 pub mod message;
 pub mod state;
 
-declare_id!("He11oExec1111111111111111111111111111111111");
+declare_id!("5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp");
 
 #[program]
 /// # Hello Executor
@@ -97,5 +97,30 @@ pub mod hello_executor {
     /// Return an instruction for the Executor relayer to execute a VAA.
     pub fn execute_vaa_v1(ctx: Context<ExecuteVaaV1>, vaa_body: Vec<u8>) -> Result<Ix> {
         instructions::execute_vaa_v1::handler(ctx, vaa_body)
+    }
+
+    /// Fallback handler for unmatched discriminators.
+    /// Handles camelCase discriminator (executeVaaV1) by routing to execute_vaa_v1.
+    pub fn fallback<'info>(
+        program_id: &Pubkey,
+        accounts: &'info [AccountInfo<'info>],
+        data: &[u8],
+    ) -> Result<()> {
+        use anchor_lang::Discriminator;
+        
+        // CamelCase discriminator: SHA256("global:executeVaaV1")[0..8]
+        const CAMEL_EXECUTE_VAA_V1: [u8; 8] = [0x69, 0xfa, 0x40, 0xa8, 0x62, 0x9c, 0x7d, 0xe6];
+
+        if data.len() >= 8 && data[..8] == CAMEL_EXECUTE_VAA_V1 {
+            // Reconstruct data with the snake_case discriminator
+            let mut new_data = Vec::with_capacity(data.len());
+            new_data.extend_from_slice(&instruction::ExecuteVaaV1::DISCRIMINATOR);
+            new_data.extend_from_slice(&data[8..]);
+            
+            // Re-invoke with corrected discriminator
+            return __private::__global::execute_vaa_v1(program_id, accounts, &new_data[8..]);
+        }
+
+        Err(anchor_lang::error::ErrorCode::InstructionFallbackNotFound.into())
     }
 }
