@@ -77,7 +77,7 @@ export const EXECUTOR_PROGRAM_FOGO =
 const SOLANA_DEVNET_RPC =
     process.env.SOLANA_DEVNET_RPC || 'https://api.devnet.solana.com';
 const FOGO_TESTNET_RPC =
-    process.env.FOGO_TESTNET_RPC || 'https://rpc.testnet.fogo.io';
+    process.env.FOGO_TESTNET_RPC || 'https://testnet.fogo.io/rpc';
 
 export const config = {
     solana: {
