@@ -1,69 +1,67 @@
-# Project Status
+# Project Status - Solana ↔ EVM Cross-Chain Messaging
 
-## Objective
-Replicate demo-hello-executor for Solana ↔ EVM cross-chain messaging using Wormhole Executor.
+## TL;DR
+**Automatic relay from Sepolia → Solana is 90% working!** The Executor calls our resolver, posts the VAA, but fails on a mysterious payment transfer. Needs fresh eyes on the Executor's behavior.
 
 ## Current State (2026-02-11)
 
-### ✅ Both Directions Work!
-
+### What Works
 | Direction | Automatic (Executor) | Manual Relay |
 |-----------|---------------------|--------------|
 | Solana → Sepolia | ✅ Works | ✅ Works |
-| Sepolia → Solana | ⚠️ Almost working! | ✅ Works |
+| Sepolia → Solana | ⚠️ 90% working | ✅ Works |
 
-### Executor Status (Sepolia → Solana)
-The automatic relay is now **working up to the final step**:
-1. ✅ Request submitted to Executor
-2. ✅ Resolver called on Solana program
-3. ✅ VAA posted to Wormhole Core Bridge
-4. ⚠️ Final transaction fails due to Executor relayer low on funds
+### The Problem
+Executor relay fails with `svm_simulation_failed`:
+```
+Simulation logs:
+  Program 3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5 invoke [1]  ← Wormhole
+  ... (system program calls)
+  Program 3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5 success    ← VAA posted!
+  Program 11111111111111111111111111111111 invoke [1]              ← System transfer
+  Transfer: insufficient lamports 228303295604, need 228304481844  ← FAILS HERE
+```
 
-**Error:** `Transfer: insufficient lamports` - Executor testnet relayer needs ~0.001 more SOL.
+**Key observation:** The Wormhole VAA posting succeeds, but then a System Program Transfer (instruction index 2) fails. This transfer is NOT from our resolver - it's added by the Executor (probably payment to quoter/payee).
 
-This is an Executor infrastructure issue, not our code!
+The ~0.001 SOL shortfall on a 228 SOL account is suspicious. Why is the Executor trying to transfer 228+ SOL?
 
-### Key Fixes Made
-1. **Peer Registration:** Use program ID for Solana peer (not emitter PDA)
-2. **Resolver:** Use `RESOLVER_PUBKEY_POSTED_VAA` placeholder so Executor posts VAA first
-3. **Fallback Handler:** Route Executor discriminator (94b8a9decf089a7f) to resolver
-
-### Deployed Contracts
+## Deployed Contracts
 - **Solana Program:** `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp`
 - **Sepolia Contract:** `0xC83dcae38111019e8efbA0B78CE6BA055e7A3f2c`
 
-## Peer Registration Notes
+## What We Fixed
+1. **Peer registration:** Set to program ID (not emitter PDA) so Executor calls resolver
+2. **Resolver:** Use `RESOLVER_PUBKEY_POSTED_VAA` placeholder so Executor posts VAA first
+3. **Fallback handler:** Routes Executor discriminator (94b8a9decf089a7f) to resolver
 
-**IMPORTANT:** The peer address serves different purposes:
-- **Receiving FROM Solana:** Peer must be emitter PDA (for VAA verification)
-- **Sending TO Solana:** Peer must be program ID (for Executor to call resolver)
+## Executor Debug Info
+Last failed relay (TX: `0x6e1dc393dd8bfacc6216710eeb2687e714297a4ab66d94dfec96c818ae7d7950`):
+```
+Status: aborted
+Failure: svm_simulation_failed
+Quote baseFee: 51043
+Payee: 0x4842781be7ba414c29029e6d7a70f6092e9d8beb
+```
 
-Current workaround: Use program ID. For bidirectional with different addresses, 
-you'd need separate inbound/outbound peer mappings.
+Check status: 
+```bash
+curl -s -X POST "https://executor-testnet.labsapis.com/v0/status/tx" \
+  -H "Content-Type: application/json" \
+  -d '{"chainId": 10002, "txHash": "<TX_HASH>"}'
+```
 
-## Manual Relay Process (Working!)
+## Files
+- `programs/hello-executor/src/resolver.rs` - Executor resolver implementation
+- `e2e/postVaaCertusone.ts` - Manual VAA posting to Solana
+- `e2e/receiveGreeting.ts` - Manual receive_greeting call
+- `e2e/sendToSepolia.ts` - Send from Solana with Executor
 
-### Sepolia → Solana
-1. Send greeting from Sepolia
-2. Fetch signed VAA from wormholescan
-3. Post VAA to Solana: `npx tsx e2e/postVaaCertusone.ts`
-4. Receive greeting: `npx tsx e2e/receiveGreeting.ts`
+## Questions for Fresh Investigation
+1. Why is the Executor's payment transfer trying to move 228+ SOL?
+2. Is the quoter/payee address correctly configured on testnet?
+3. Is there a Solana testnet Executor config issue?
 
-### Solana → Sepolia
-1. Send greeting from Solana: `npx tsx e2e/sendToSepolia.ts`
-2. Fetch signed VAA from wormholescan
-3. Call `executeVAAv1(vaa)` on Sepolia HelloWormhole
-
-## Scripts
-- `e2e/postVaaCertusone.ts` - Posts VAA to Solana
-- `e2e/receiveGreeting.ts` - Receives greeting on Solana
-- `e2e/sendToSepolia.ts` - Sends from Solana with Executor relay
-
-## Dependencies
-- `@certusone/wormhole-sdk` - For VAA posting
-- `executor-account-resolver-svm` - Resolver interface
-
-## Next Steps
-- [ ] Report Executor testnet relayer funding issue
-- [ ] Consider reducing `Received` account size to minimize rent
-- [ ] Add bidirectional peer support (separate inbound/outbound)
+## Repo
+https://github.com/evgeniko/demo-hello-executor-solana
+Branch: `feat/executor-resolver-evm-to-solana`
