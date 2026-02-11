@@ -19,6 +19,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@certusone/wormhole-sdk": "^0.10.18",
     "@coral-xyz/anchor": "^0.31.0",
     "@solana/web3.js": "^1.95.0",
     "@wormhole-foundation/sdk": "^3.9.0",
