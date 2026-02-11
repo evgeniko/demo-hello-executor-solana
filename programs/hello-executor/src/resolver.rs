@@ -7,7 +7,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::InstructionData;
 use executor_account_resolver_svm::{
     InstructionGroup, InstructionGroups, Resolver, SerializableAccountMeta,
-    SerializableInstruction, RESOLVER_PUBKEY_PAYER,
+    SerializableInstruction, RESOLVER_PUBKEY_PAYER, RESOLVER_PUBKEY_POSTED_VAA,
 };
 use solana_program::program::set_return_data;
 
@@ -113,6 +113,10 @@ pub fn handle_resolve_raw<'info>(
 }
 
 /// Build the resolver result containing the instruction to execute.
+/// 
+/// Uses RESOLVER_PUBKEY_POSTED_VAA placeholder to tell the Executor to:
+/// 1. First post the VAA to the Wormhole Core Bridge
+/// 2. Replace the placeholder with the actual posted_vaa address
 fn build_resolver_result(
     program_id: &Pubkey,
     config_key: &Pubkey,
@@ -120,19 +124,12 @@ fn build_resolver_result(
     system_program_key: &Pubkey,
     vaa_body: &[u8],
 ) -> Result<Resolver<InstructionGroups>> {
-    use wormhole_anchor_sdk::wormhole;
-    
     let vaa_hash = solana_program::keccak::hashv(&[vaa_body]).to_bytes();
     let (emitter_chain, _emitter_address, sequence) = parse_vaa_body(vaa_body)?;
     
     msg!("Building resolver for chain {} seq {}", emitter_chain, sequence);
 
-    // Derive PDAs
-    let (posted_vaa, _) = Pubkey::find_program_address(
-        &[wormhole::SEED_PREFIX_POSTED_VAA, &vaa_hash],
-        wormhole_program_key,
-    );
-
+    // Derive PDAs for peer and received (these are program-specific)
     let (peer, _) = Pubkey::find_program_address(
         &[Peer::SEED_PREFIX, &emitter_chain.to_le_bytes()],
         program_id,
@@ -148,6 +145,9 @@ fn build_resolver_result(
     );
 
     // Build the receive_greeting instruction
+    // Use RESOLVER_PUBKEY_POSTED_VAA placeholder - Executor will:
+    // 1. Post the VAA to Wormhole Core Bridge
+    // 2. Replace placeholder with actual posted_vaa account address
     let receive_data = crate::instruction::ReceiveGreeting { vaa_hash }.data();
 
     let instruction = SerializableInstruction {
@@ -169,7 +169,8 @@ fn build_resolver_result(
                 is_writable: false,
             },
             SerializableAccountMeta {
-                pubkey: posted_vaa,
+                // Use placeholder - Executor will post VAA and replace with actual address
+                pubkey: RESOLVER_PUBKEY_POSTED_VAA,
                 is_signer: false,
                 is_writable: false,
             },

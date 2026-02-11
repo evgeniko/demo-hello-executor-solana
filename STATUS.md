@@ -5,81 +5,65 @@ Replicate demo-hello-executor for Solana ↔ EVM cross-chain messaging using Wor
 
 ## Current State (2026-02-11)
 
-### ✅ Working
+### ✅ Both Directions Work!
 
 | Direction | Automatic (Executor) | Manual Relay |
 |-----------|---------------------|--------------|
 | Solana → Sepolia | ✅ Works | ✅ Works |
-| Sepolia → Solana | ❌ "unsupported" | ✅ **Works!** |
+| Sepolia → Solana | ⚠️ Almost working! | ✅ Works |
+
+### Executor Status (Sepolia → Solana)
+The automatic relay is now **working up to the final step**:
+1. ✅ Request submitted to Executor
+2. ✅ Resolver called on Solana program
+3. ✅ VAA posted to Wormhole Core Bridge
+4. ⚠️ Final transaction fails due to Executor relayer low on funds
+
+**Error:** `Transfer: insufficient lamports` - Executor testnet relayer needs ~0.001 more SOL.
+
+This is an Executor infrastructure issue, not our code!
+
+### Key Fixes Made
+1. **Peer Registration:** Use program ID for Solana peer (not emitter PDA)
+2. **Resolver:** Use `RESOLVER_PUBKEY_POSTED_VAA` placeholder so Executor posts VAA first
+3. **Fallback Handler:** Route Executor discriminator (94b8a9decf089a7f) to resolver
 
 ### Deployed Contracts
 - **Solana Program:** `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp`
 - **Sepolia Contract:** `0xC83dcae38111019e8efbA0B78CE6BA055e7A3f2c`
 
-### Key Findings
+## Peer Registration Notes
 
-#### 1. Executor "unsupported" for Custom Solana Programs
-The Wormhole Executor returns "unsupported" for EVM → Solana relay to custom programs. It likely only supports known protocols (NTT, Token Bridge). **Workaround: Manual relay works!**
+**IMPORTANT:** The peer address serves different purposes:
+- **Receiving FROM Solana:** Peer must be emitter PDA (for VAA verification)
+- **Sending TO Solana:** Peer must be program ID (for Executor to call resolver)
 
-#### 2. Peer Registration - Emitter PDA vs Program ID
-- **Solana programs emit from the emitter PDA**, not the program ID
-- Emitter PDA: `b7df8ac821c5ff824eeb235f59153edf3f93b021d81150e1988884f9f450eeef` (DNmK1Red1aEtrkUhfniwpXzjxtnVjxeVeKUBtdM5vwkJ)
-- Program ID: `47c51f36dcb45b5bbdba739f0fa993b142f908f06095def3775428b46361b9d3` (5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp)
-- **EVM side must register the emitter PDA as peer, not the program ID!**
+Current workaround: Use program ID. For bidirectional with different addresses, 
+you'd need separate inbound/outbound peer mappings.
 
-#### 3. VAA Hash Calculation
-- Use **keccak256** (certusone SDK), not SHA256
-- The `@certusone/wormhole-sdk` `parseVaa()` function calculates the correct hash
+## Manual Relay Process (Working!)
 
-## Manual Relay Process
-
-### Solana → Sepolia
-1. Send greeting from Solana (`sendToSepolia.ts`)
-2. Wait for VAA signing (~1-2 min)
-3. Fetch VAA from wormholescan API
-4. Call `executeVAAv1(vaa)` on Sepolia HelloWormhole
-
-### Sepolia → Solana (NEW!)
-1. Send greeting from Sepolia (existing VAAs work too)
-2. Fetch signed VAA from wormholescan:
-   ```
-   GET https://api.testnet.wormholescan.io/api/v1/vaas/10002/000000000000000000000000c83dcae38111019e8efba0b78ce6ba055e7a3f2c/{sequence}
-   ```
+### Sepolia → Solana
+1. Send greeting from Sepolia
+2. Fetch signed VAA from wormholescan
 3. Post VAA to Solana: `npx tsx e2e/postVaaCertusone.ts`
 4. Receive greeting: `npx tsx e2e/receiveGreeting.ts`
 
+### Solana → Sepolia
+1. Send greeting from Solana: `npx tsx e2e/sendToSepolia.ts`
+2. Fetch signed VAA from wormholescan
+3. Call `executeVAAv1(vaa)` on Sepolia HelloWormhole
+
 ## Scripts
+- `e2e/postVaaCertusone.ts` - Posts VAA to Solana
+- `e2e/receiveGreeting.ts` - Receives greeting on Solana
+- `e2e/sendToSepolia.ts` - Sends from Solana with Executor relay
 
-### E2E Test Scripts
-- `e2e/sendToSepolia.ts` - Send greeting Solana → Sepolia
-- `e2e/postVaaCertusone.ts` - Post VAA to Solana Wormhole bridge (uses @certusone/wormhole-sdk)
-- `e2e/receiveGreeting.ts` - Call receive_greeting on Solana program
-- `e2e/sendWithRelay.ts` - Send with Executor automatic relay (Solana → Sepolia)
-
-### Configuration
-- `e2e/.env` - Environment variables (RPC URLs, program IDs)
-- Solana keypair: `~/.config/solana/test-wallets/solana-devnet.json`
-
-## Test VAAs
-
-### Sepolia → Solana (Sequence 9)
-```
-AQAAAAABAHm4oBxraTHr/yZFBGvZ6Ubugz6O1hwTFY/hug8gOceUW4ETC+jaNcTzPhQbWDsIUsSjI6SvlHd5qYdWHcu0pBEAaYxClAAAAAAnEgAAAAAAAAAAAAAAAMg9yuOBEQGejvugt4zmugVeej8sAAAAAAAAAAnIRml4ZWQgcGVlciBhZGRyZXNzISDwn46J
-```
-- Payload: "Fixed peer address! 🎉"
-- VAA Hash: `f7f4f62fd21ce81719c6fa670340c93a2e4e41303fce76497a1ae1353be75d4f`
-- Posted VAA PDA: `F8sVfAYL18qiMKKwVj11faSKyQixy7FndvY23K5rkRqM`
-- Receive TX: `3Qyn2Dpb924wUseuSikf7kuRxikt4qeXv9HhtTd9LQdQXdJVQZdE6A9PgWL8RmfNGHFfXJLcZrc22dwmite7HKht`
-
-## Dependencies Added
-- `@certusone/wormhole-sdk` - For posting VAAs to Solana (simpler than @wormhole-foundation SDK for this use case)
+## Dependencies
+- `@certusone/wormhole-sdk` - For VAA posting
+- `executor-account-resolver-svm` - Resolver interface
 
 ## Next Steps
-- [ ] Build automated manual relayer service for EVM → Solana
-- [ ] Investigate if Executor can be extended to support custom programs
-- [ ] Add end-to-end test script that does full round trip
-
-## Links
-- [Wormhole Scan (Testnet)](https://testnet.wormholescan.io/)
-- [Solana Explorer (Devnet)](https://explorer.solana.com/?cluster=devnet)
-- [Sepolia Etherscan](https://sepolia.etherscan.io/)
+- [ ] Report Executor testnet relayer funding issue
+- [ ] Consider reducing `Received` account size to minimize rent
+- [ ] Add bidirectional peer support (separate inbound/outbound)
