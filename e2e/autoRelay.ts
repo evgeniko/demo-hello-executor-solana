@@ -20,9 +20,9 @@ const CHAINS = {
         id: 1,
         name: 'Solana',
         rpc: 'https://api.devnet.solana.com',
-        programId: new PublicKey('J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk'),
+        programId: new PublicKey('5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp'),
         wormhole: new PublicKey('3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5'),
-        executor: new PublicKey('Executr1111111111111111111111111111111111111'), // Placeholder
+        executor: new PublicKey('execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYyuDRciV'),
         keypairPath: path.join(process.env.HOME || '', '.config/solana/test-wallets/solana-devnet.json'),
         token: 'SOL',
         emoji: '☀️',
