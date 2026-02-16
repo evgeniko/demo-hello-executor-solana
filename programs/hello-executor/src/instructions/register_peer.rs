@@ -37,11 +37,12 @@ pub struct RegisterPeer<'info> {
 
 pub fn handler(ctx: Context<RegisterPeer>, chain: u16, address: [u8; 32]) -> Result<()> {
     // Validate the peer:
-    // - Cannot be Solana's chain ID (1)
+    // - Cannot be own chain ID (prevents self-registration)
     // - Cannot be zero address
+    let own_chain = ctx.accounts.config.chain_id;
     require!(
         chain > 0
-            && chain != wormhole::CHAIN_ID_SOLANA
+            && chain != own_chain
             && !address.iter().all(|&x| x == 0),
         HelloExecutorError::InvalidPeer,
     );

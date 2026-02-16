@@ -13,7 +13,7 @@ pub mod message;
 pub mod resolver;
 pub mod state;
 
-declare_id!("5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp");
+declare_id!("J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk");
 
 #[program]
 /// # Hello Executor

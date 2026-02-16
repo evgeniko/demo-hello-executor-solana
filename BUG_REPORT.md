@@ -1,7 +1,11 @@
-# Executor Cross-VM: EVM → Solana Relay Issue
+# Executor Cross-VM Relay Issues
 
 ## Goal
-Building a cross-VM HelloWorld using Executor to relay messages between Sepolia (EVM) and Solana Devnet.
+Building a cross-VM HelloWorld using Executor to relay messages between EVM chains and Solana Devnet.
+
+---
+
+## Part 1: Sepolia → Solana (EVM → SVM)
 
 ## What Works ✅
 
@@ -107,3 +111,109 @@ curl -s -X POST "https://executor-testnet.labsapis.com/v0/status/tx" \
 - Repo: https://github.com/evgeniko/demo-hello-executor-solana/tree/feat/executor-resolver-evm-to-solana
 - [`resolver.rs`](https://github.com/evgeniko/demo-hello-executor-solana/blob/feat/executor-resolver-evm-to-solana/programs/hello-executor/src/resolver.rs) — Executor resolver implementation
 - [`lib.rs`](https://github.com/evgeniko/demo-hello-executor-solana/blob/feat/executor-resolver-evm-to-solana/programs/hello-executor/src/lib.rs) — fallback handler for Executor discriminator
+
+---
+
+## Part 2: Fogo Testnet ↔ Solana Devnet (SVM ↔ SVM)
+
+### Goal
+Testing Executor automatic relay between two SVM chains: Fogo Testnet (chain 51) and Solana Devnet (chain 1).
+
+### What Works ✅
+
+**Program Deployment:**
+- Fogo Testnet: `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk`
+- Solana Devnet: `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk`
+- Peers registered in both directions
+
+**Transaction Submission:**
+- Transactions submit successfully on both chains
+- Executor quote API works and returns valid quotes
+- Payment to Executor payee address succeeds
+
+### What Fails ❌
+
+**Solana → Fogo (automatic relay):**
+- TX: `4XnHGxcbrXfLmFVCCyxoG58qUSCKfp2M4T9ygRVvPy9ap3nRwm1kvQx2NBDV6fAvtgpjWVNsHtJXRQSedMRGh4e3`
+- [Explorer](https://explorer.solana.com/tx/4XnHGxcbrXfLmFVCCyxoG58qUSCKfp2M4T9ygRVvPy9ap3nRwm1kvQx2NBDV6fAvtgpjWVNsHtJXRQSedMRGh4e3?cluster=devnet)
+- Status: VAA generated but never delivered to Fogo
+
+**Fogo → Solana (automatic relay):**
+- TX: `5pn2JV3wwCyggQuz6A6k1SJU8s1qxEZrQgG512ZRrb556unQaRPVmTtpiLvJ2S3rJTe1sBgNcwHCAK8GXwRH4G9Y`
+- Status: Times out waiting for relay
+
+### Root Cause Analysis
+
+Querying Wormholescan API reveals two infrastructure issues:
+
+#### Issue 1: No VAAs from Fogo (chain 51)
+
+```bash
+curl -s "https://api.testnet.wormholescan.io/api/v1/vaas?emitterChain=51&limit=5"
+# Returns VAAs from chains 1, 2, 6, 8, 50, 10002... but ZERO from chain 51
+```
+
+**Finding:** Fogo Testnet guardians are not signing messages. No VAAs exist with `emitterChain=51`.
+
+#### Issue 2: Executor not delivering TO Fogo
+
+The Solana→Fogo VAA exists in Wormholescan but has `destinationTx: null`:
+
+```json
+{
+  "id": "1/b7df8ac821c5ff824eeb235f59153edf3f93b021d81150e1988884f9f450eeef/10",
+  "emitterChain": 1,
+  "txHash": "4XnHGxcbrXfLmFVCCyxoG58qUSCKfp2M4T9ygRVvPy9ap3nRwm1kvQx2NBDV6fAvtgpjWVNsHtJXRQSedMRGh4e3",
+  "globalTx": {
+    "destinationTx": null  // ← Never delivered
+  }
+}
+```
+
+**Finding:** Even when VAAs exist (Solana→Fogo), the Executor isn't delivering them to Fogo.
+
+### Summary Table
+
+| Direction | VAA Generated | Executor Delivery |
+|-----------|---------------|-------------------|
+| Solana → Fogo | ✅ Yes | ❌ Not delivered |
+| Fogo → Solana | ❌ No (guardians not signing) | ❌ Can't relay |
+
+### Test Scripts
+
+Scripts for reproducing these issues are in the `e2e/` directory:
+
+- `autoRelaySolanaToFogo.ts` — Test Solana→Fogo automatic relay
+- `autoRelayFogoToSolana.ts` — Test Fogo→Solana automatic relay
+- `initFogo.ts` — Initialize program on Fogo Testnet
+- `registerPeers.ts` — Register cross-chain peers
+
+### Environment
+
+| Component | Value |
+|-----------|-------|
+| Executor API | `https://executor-testnet.labsapis.com/v0` |
+| Fogo Testnet RPC | `https://testnet.fogo.io` |
+| Fogo Chain ID | 51 |
+| Solana Chain ID | 1 |
+| Program ID (both chains) | `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk` |
+| Wormhole Core (Fogo) | `BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4` |
+| Executor Program (Fogo) | `execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYyuDRciV` |
+
+### Questions
+
+1. Is Fogo Testnet fully integrated with the guardian network?
+2. Is the Executor configured to deliver messages to Fogo Testnet?
+3. What is the expected timeline for full Fogo Testnet support?
+
+---
+
+## Conclusion
+
+Both EVM→SVM (Sepolia→Solana) and SVM↔SVM (Fogo↔Solana) automatic relay have issues:
+
+- **Sepolia→Solana:** Fails during simulation with unexpected 228 SOL transfer
+- **Fogo→Solana:** Guardians not signing Fogo messages
+- **Solana→Fogo:** VAA exists but Executor not delivering
+
+Manual relay (posting VAA + calling receive directly) works for Sepolia→Solana, confirming the program implementation is correct.
