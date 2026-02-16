@@ -12,6 +12,8 @@ Building a cross-VM HelloWorld using Executor to relay messages between Sepolia 
 
 **Manual relay (Sepolia → Solana):** Also works!
 - Post VAA via Certusone SDK + call `receive_greeting` directly → succeeds
+- Solana TX: `4ywCzfGMWjN7rMigKvkTAceXvZDAbyuxyLdVQXvZEeZuHDMJG5R6V38BPtjRNHmsh48rcTtsDpPuG2GkG9g2Pqq8`
+- [Solana Explorer](https://explorer.solana.com/tx/4ywCzfGMWjN7rMigKvkTAceXvZDAbyuxyLdVQXvZEeZuHDMJG5R6V38BPtjRNHmsh48rcTtsDpPuG2GkG9g2Pqq8?cluster=devnet)
 
 **Resolver is working:** The Executor successfully calls our Solana resolver and receives valid instructions back. The failure occurs *after* the resolver returns.
 
