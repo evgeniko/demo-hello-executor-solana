@@ -8,7 +8,7 @@ import * as path from 'path';
 const CHAINS = {
     solana: {
         rpc: 'https://api.devnet.solana.com',
-        programId: new PublicKey('5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp'),
+        programId: new PublicKey('J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk'),
         chainId: 1,
         keypairPath: path.join(process.env.HOME || '', '.config/solana/test-wallets/solana-devnet.json'),
     },
