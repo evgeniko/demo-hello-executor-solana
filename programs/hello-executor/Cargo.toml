@@ -23,6 +23,7 @@ idl-build = [
 # Networks
 mainnet = ["wormhole-anchor-sdk/mainnet"]
 solana-devnet = ["wormhole-anchor-sdk/solana-devnet"]
+fogo-testnet = ["wormhole-anchor-sdk/from-env"]
 tilt-devnet = ["wormhole-anchor-sdk/tilt-devnet"]
 
 [dependencies]

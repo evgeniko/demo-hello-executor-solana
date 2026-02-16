@@ -92,7 +92,7 @@ pub fn handle_resolve_raw<'info>(
     let (config_key, _) = Pubkey::find_program_address(&[Config::SEED_PREFIX], program_id);
     
     // Wormhole Core Bridge on Solana Devnet
-    let wormhole_program_key = Pubkey::try_from("3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5").unwrap();
+    let wormhole_program_key = Pubkey::try_from("BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4").unwrap();
     let system_program_key = solana_program::system_program::ID;
 
     let result = build_resolver_result(
