@@ -183,10 +183,15 @@ The Solana→Fogo VAA exists in Wormholescan but has `destinationTx: null`:
 
 Scripts for reproducing these issues are in the `e2e/` directory:
 
-- `autoRelaySolanaToFogo.ts` — Test Solana→Fogo automatic relay
-- `autoRelayFogoToSolana.ts` — Test Fogo→Solana automatic relay
-- `initFogo.ts` — Initialize program on Fogo Testnet
-- `registerPeers.ts` — Register cross-chain peers
+```bash
+# Test automatic relay (both directions)
+npx tsx e2e/autoRelay.ts solana-to-fogo "Hello from Solana!"
+npx tsx e2e/autoRelay.ts fogo-to-solana "Hello from Fogo!"
+
+# Setup scripts
+npx tsx e2e/initFogo.ts        # Initialize program on Fogo Testnet
+npx tsx e2e/registerPeers.ts   # Register cross-chain peers
+```
 
 ### Environment
 
