@@ -52,6 +52,11 @@ pub mod hello_executor {
         instructions::request_relay::handler(ctx, args)
     }
 
+    /// Update Wormhole configuration (owner only).
+    pub fn update_wormhole_config(ctx: Context<UpdateWormholeConfig>) -> Result<()> {
+        instructions::update_config::handler(ctx)
+    }
+
     /// Executor resolver: returns instructions for a VAA execution.
     /// 
     /// NOTE: This uses the standard Anchor discriminator. The Executor expects

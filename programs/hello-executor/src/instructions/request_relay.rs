@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use wormhole_anchor_sdk::wormhole::{self, program::Wormhole};
 
 use crate::{
     error::HelloExecutorError,
@@ -53,19 +52,13 @@ pub struct RequestRelay<'info> {
     /// Program's Wormhole emitter account.
     pub wormhole_emitter: Account<'info, WormholeEmitter>,
 
-    /// Wormhole Core Bridge program.
-    pub wormhole_program: Program<'info, Wormhole>,
+    /// CHECK: Wormhole Core Bridge program (different on each chain).
+    pub wormhole_program: UncheckedAccount<'info>,
 
+    /// CHECK: Wormhole sequence - verified via config address
     #[account(
         address = config.wormhole.sequence @ HelloExecutorError::InvalidWormholeSequence,
-        seeds = [
-            wormhole::SequenceTracker::SEED_PREFIX,
-            wormhole_emitter.key().as_ref(),
-        ],
-        bump,
-        seeds::program = wormhole_program.key,
     )]
-    /// CHECK: Emitter's sequence account.
     pub wormhole_sequence: UncheckedAccount<'info>,
 
     /// Executor program.
@@ -76,14 +69,17 @@ pub struct RequestRelay<'info> {
 }
 
 pub fn handler(ctx: Context<RequestRelay>, args: RequestRelayArgs) -> Result<()> {
-    let mut buf = &ctx.accounts.wormhole_sequence.try_borrow_data()?[..];
-    let seq = wormhole::SequenceTracker::try_deserialize(&mut buf)?;
-    require!(seq.sequence > 0, HelloExecutorError::NoMessagesYet);
+    // Read sequence from account data (first 8 bytes)
+    let seq_data = ctx.accounts.wormhole_sequence.try_borrow_data()?;
+    let sequence = u64::from_le_bytes(seq_data[0..8].try_into().unwrap());
+    drop(seq_data);
+    require!(sequence > 0, HelloExecutorError::NoMessagesYet);
 
+    // Request relay for the most recent message (sequence - 1 since sequence is next value)
     let request_bytes = make_vaa_v1_request(
         ctx.accounts.config.chain_id,
         ctx.accounts.wormhole_emitter.key().to_bytes(),
-        seq.sequence - 1,
+        sequence - 1,
     );
 
     executor_cpi::request_for_execution(

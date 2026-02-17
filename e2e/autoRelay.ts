@@ -164,7 +164,8 @@ async function main() {
     // Build send_greeting
     const sendData = Buffer.concat([
         getDiscriminator('send_greeting'),
-        Buffer.from([message.length & 0xff, (message.length >> 8) & 0xff, 0, 0]),
+        // Use byte length, not JS string length (important for emojis/unicode)
+        (() => { const len = Buffer.byteLength(message, 'utf-8'); return Buffer.from([len & 0xff, (len >> 8) & 0xff, 0, 0]); })(),
         Buffer.from(message, 'utf-8')
     ]);
     

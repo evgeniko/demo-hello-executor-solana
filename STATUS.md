@@ -1,57 +1,51 @@
 # Cross-VM Demo Status - Solana Side
 
-**Last Updated:** 2026-02-17 13:00 UTC
+**Last Updated:** 2026-02-17 13:15 UTC
 
-## Quick State (for context recovery)
+## Quick State
 
 ```
 WORKING:
   ✅ EVM → Solana (Sepolia → Solana Devnet)
   ✅ Solana → Fogo (Solana Devnet → Fogo Testnet)
+  ✅ Solana → EVM (VAAs signed, relay in progress)
   
-TESTING:
-  ⏳ Solana → EVM (VAAs signed, checking relay)
-  
-BLOCKED:
-  ❌ Fogo → Solana (program config has wrong Wormhole addresses)
+IN PROGRESS:
+  ⏳ Fogo → Solana (send_greeting + request_relay work, needs more FOGO for relay cost)
 ```
 
-## Fogo Program Issue
+## Recent Fixes (2026-02-17)
 
-The HelloExecutor on Fogo (`J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk`) was initialized with WRONG Wormhole addresses:
+### 1. Fogo Program Config Fixed
+- Deployed `update_wormhole_config` instruction
+- Updated bridge and fee_collector to correct Fogo Wormhole addresses
 
-| Field | Config has (WRONG) | Should be |
-|-------|-------------------|-----------|
-| bridge | `4S5px5pc8WGq...` | `fZxfHeZRMLU6pa...` |
-| fee_collector | `FPHWiBGkRmXD...` | `28B5zG1V6L4SSi...` |
+### 2. Raw CPI for Wormhole (cross-chain compatible)
+Changed `send_greeting` to use raw CPI instead of wormhole-anchor-sdk:
+- Removed `Program<'info, Wormhole>` validation (hardcodes program ID)
+- Use `UncheckedAccount` for wormhole accounts
+- 1-byte instruction discriminator (not 8-byte Anchor)
+- Manual fee reading from bridge account (offset 16-24)
+- Proper sequence handling (current + 1)
 
-**Fix needed:** Deploy program update with `update_wormhole_config` instruction.
-**Blocker:** Need ~1.5 more FOGO (wallet has 1.45, need ~2.9 for deploy).
+### 3. Fixed request_relay
+- Removed wormhole SDK dependency
+- Use `UncheckedAccount` for wormhole_program
+- Manual sequence reading
 
-Wallet: `4VyQZpnMdUM59voCnCxsfNxkihPFFm57W3JWue8GHSzD`
+### 4. UTF-8 byte length fix in autoRelay.ts
+- JS `message.length` ≠ UTF-8 byte length for emojis
+- Now uses `Buffer.byteLength(message, 'utf-8')`
 
-## Key Findings - SVM↔SVM Messaging
+## Fogo → Solana Test Results
 
-### 1. Peer Registration (Asymmetric!)
-- **Source chain:** Register destination **PROGRAM** (for routing)
-- **Dest chain:** Register source **EMITTER** (for VAA verification)
-
-Different from EVM↔EVM where same address on both sides.
-
-### 2. msgValue for SVM Destinations
-```typescript
-const SVM_MSG_VALUE_LAMPORTS = 15_000_000n; // ~0.015 SOL for rent/fees
 ```
-
-### 3. Cost Calculation
-```typescript
-const cost = quote.estimatedCost + msgValue;
-```
-
-### 4. Executor Program
-Same address on both Solana Devnet and Fogo Testnet:
-```
-execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYuDRciV
+✅ send_greeting: SUCCESS
+   - Wormhole post_message CPI works
+   - Sequence: 4
+   
+✅ request_relay: Executor CPI works
+   - But: insufficient lamports (11.4 vs 54 FOGO needed)
 ```
 
 ## Deployed Contracts
@@ -59,34 +53,46 @@ execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYuDRciV
 | Chain | Address | Status |
 |-------|---------|--------|
 | Solana Devnet | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` | ✅ Working |
-| Fogo Testnet | `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk` | ❌ Bad config |
-
-## Repos & PRs
-
-| Repo | URL | Status |
-|------|-----|--------|
-| EVM | [wormhole-foundation/demo-hello-executor#2](https://github.com/wormhole-foundation/demo-hello-executor/pull/2) | PR open |
-| Solana | [evgeniko/demo-hello-executor-solana](https://github.com/evgeniko/demo-hello-executor-solana) | Changes on main |
-
-## Local Files
-
-- `e2e/autoRelay.ts` - Combined script for both directions
-- `e2e/fixFogoPeer*.ts` - Peer registration fix scripts
-- `programs/hello-executor/src/instructions/update_config.rs` - NEW (not committed)
+| Fogo Testnet | `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk` | ✅ Fixed |
 
 ## Wormhole Addresses
 
-### Solana Devnet
-- Program: `3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5`
-- Bridge PDA: `6bi4JGDoRwUs9TYBuvoA7dUVyikTJDrJsJU1ew6KVLiu`
-
 ### Fogo Testnet
 - Program: `BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4`
-- Bridge PDA: `fZxfHeZRMLU6paNA2QjqygNSu53Euvds3jaeD1Kakkg`
+- Bridge: `fZxfHeZRMLU6paNA2QjqygNSu53Euvds3jaeD1Kakkg`
 - Fee Collector: `28B5zG1V6L4SSi5CPjWMRPTVCmVMG89zk37maZqQpZnU`
+
+### Solana Devnet
+- Program: `3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5`
+
+## Key Code Changes
+
+### send_greeting.rs
+```rust
+// 1-byte Wormhole instruction discriminator
+ix_data.push(0x01); // PostMessage
+
+// Fee at offset 16-24 in bridge account
+let fee = u64::from_le_bytes(bridge_data[16..24].try_into().unwrap());
+
+// Use next sequence (current + 1)
+let sequence = current_seq + 1;
+```
+
+### request_relay.rs
+```rust
+// Manual sequence reading
+let sequence = u64::from_le_bytes(seq_data[0..8].try_into().unwrap());
+```
+
+### autoRelay.ts
+```typescript
+// Use byte length, not string length
+const len = Buffer.byteLength(message, 'utf-8');
+```
 
 ## Next Steps
 
-1. ⏳ Get FOGO tokens to deploy program fix
-2. ⏳ Test Fogo → Solana after fix
-3. 📝 Update PR #2 with findings
+1. ⏳ Fund wallet with ~50 more FOGO to complete Fogo→Solana test
+2. 📝 Commit all fixes to repo
+3. 📝 Update PR with final status
