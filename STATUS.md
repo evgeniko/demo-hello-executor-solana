@@ -1,98 +1,108 @@
 # Cross-VM Demo Status - Solana Side
 
-**Last Updated:** 2026-02-17 13:15 UTC
+**Last Updated:** 2026-02-17 13:20 UTC
 
-## Quick State
+## Quick State (for context recovery)
 
 ```
 WORKING:
   ✅ EVM → Solana (Sepolia → Solana Devnet)
-  ✅ Solana → Fogo (Solana Devnet → Fogo Testnet)
-  ✅ Solana → EVM (VAAs signed, relay in progress)
+  ✅ Solana → Fogo (Solana Devnet → Fogo Testnet)  
+  ✅ Solana → EVM (VAAs signed, relay completing)
   
-IN PROGRESS:
-  ⏳ Fogo → Solana (send_greeting + request_relay work, needs more FOGO for relay cost)
+ALMOST DONE:
+  ⏳ Fogo → Solana - Both instructions work! Need ~50 FOGO for relay cost
 ```
 
-## Recent Fixes (2026-02-17)
+## Session Progress (2026-02-17)
 
-### 1. Fogo Program Config Fixed
-- Deployed `update_wormhole_config` instruction
-- Updated bridge and fee_collector to correct Fogo Wormhole addresses
+### Completed Today
+1. ✅ Fixed Fogo program config (wrong Wormhole addresses)
+2. ✅ Added `update_wormhole_config` instruction
+3. ✅ Converted `send_greeting` to raw CPI (cross-chain compatible)
+4. ✅ Converted `request_relay` to use UncheckedAccount
+5. ✅ Fixed UTF-8 byte length bug in autoRelay.ts
+6. ✅ Fixed Wormhole instruction format (1-byte discriminator)
+7. ✅ Fixed bridge fee offset (16-24)
+8. ✅ Fixed sequence handling (current + 1)
+9. ✅ Committed and pushed all changes
 
-### 2. Raw CPI for Wormhole (cross-chain compatible)
-Changed `send_greeting` to use raw CPI instead of wormhole-anchor-sdk:
-- Removed `Program<'info, Wormhole>` validation (hardcodes program ID)
-- Use `UncheckedAccount` for wormhole accounts
-- 1-byte instruction discriminator (not 8-byte Anchor)
-- Manual fee reading from bridge account (offset 16-24)
-- Proper sequence handling (current + 1)
+### Blocking Issue
+- Fogo → Solana test needs ~50 FOGO (wallet has 11.4, needs 54)
+- Wallet: `4VyQZpnMdUM59voCnCxsfNxkihPFFm57W3JWue8GHSzD`
 
-### 3. Fixed request_relay
-- Removed wormhole SDK dependency
-- Use `UncheckedAccount` for wormhole_program
-- Manual sequence reading
-
-### 4. UTF-8 byte length fix in autoRelay.ts
-- JS `message.length` ≠ UTF-8 byte length for emojis
-- Now uses `Buffer.byteLength(message, 'utf-8')`
-
-## Fogo → Solana Test Results
+## Fogo → Solana Test Output
 
 ```
-✅ send_greeting: SUCCESS
+✅ SendGreeting: SUCCESS
    - Wormhole post_message CPI works
-   - Sequence: 4
+   - Message posted with sequence 4
    
-✅ request_relay: Executor CPI works
-   - But: insufficient lamports (11.4 vs 54 FOGO needed)
+✅ RequestRelay: Executor CPI works  
+   - But: Transfer failed - insufficient lamports
+   - Has: 11,433,372,120 lamports
+   - Needs: 53,946,464,281 lamports
+```
+
+## Key Technical Fixes
+
+### 1. Wormhole SDK Workaround
+The `wormhole-anchor-sdk` hardcodes program IDs. For cross-chain SVM support:
+```rust
+// Changed FROM (SDK validates program ID):
+pub wormhole_program: Program<'info, Wormhole>,
+
+// Changed TO (works on any chain):
+pub wormhole_program: UncheckedAccount<'info>,
+```
+
+### 2. Raw CPI for Wormhole
+```rust
+// 1-byte instruction discriminator (not 8-byte Anchor)
+ix_data.push(0x01); // PostMessage = 1
+
+// Fee at offset 16-24 in bridge account
+let fee = u64::from_le_bytes(bridge_data[16..24].try_into().unwrap());
+
+// Sequence: current + 1 for next message
+let sequence = current_seq + 1;
+```
+
+### 3. autoRelay.ts UTF-8 Fix
+```typescript
+// Wrong: message.length (JS string length)
+// Right: Buffer.byteLength(message, 'utf-8')
 ```
 
 ## Deployed Contracts
 
 | Chain | Address | Status |
 |-------|---------|--------|
-| Solana Devnet | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` | ✅ Working |
+| Solana Devnet | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` | ✅ |
 | Fogo Testnet | `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk` | ✅ Fixed |
 
 ## Wormhole Addresses
 
-### Fogo Testnet
-- Program: `BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4`
-- Bridge: `fZxfHeZRMLU6paNA2QjqygNSu53Euvds3jaeD1Kakkg`
-- Fee Collector: `28B5zG1V6L4SSi5CPjWMRPTVCmVMG89zk37maZqQpZnU`
+| Chain | Program | Bridge PDA |
+|-------|---------|------------|
+| Solana Devnet | `3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5` | `6bi4JGDo...` |
+| Fogo Testnet | `BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4` | `fZxfHeZR...` |
 
-### Solana Devnet
-- Program: `3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5`
+## Repos & Commits
 
-## Key Code Changes
-
-### send_greeting.rs
-```rust
-// 1-byte Wormhole instruction discriminator
-ix_data.push(0x01); // PostMessage
-
-// Fee at offset 16-24 in bridge account
-let fee = u64::from_le_bytes(bridge_data[16..24].try_into().unwrap());
-
-// Use next sequence (current + 1)
-let sequence = current_seq + 1;
-```
-
-### request_relay.rs
-```rust
-// Manual sequence reading
-let sequence = u64::from_le_bytes(seq_data[0..8].try_into().unwrap());
-```
-
-### autoRelay.ts
-```typescript
-// Use byte length, not string length
-const len = Buffer.byteLength(message, 'utf-8');
-```
+| Repo | Latest Commit | Status |
+|------|---------------|--------|
+| evgeniko/demo-hello-executor-solana | `3642f52` | ✅ Pushed |
+| evgeniko/demo-hello-executor | `36e2451` | ✅ Pushed (PR #2) |
 
 ## Next Steps
 
-1. ⏳ Fund wallet with ~50 more FOGO to complete Fogo→Solana test
-2. 📝 Commit all fixes to repo
-3. 📝 Update PR with final status
+1. ⏳ Get ~50 FOGO to complete Fogo→Solana relay test
+2. 📝 Verify full end-to-end flow
+3. 📝 Update PR descriptions with final findings
+
+## Notes for Future Sessions
+
+- SDK workaround is intentional (not a bug to fix in demo)
+- SDK fix would require wormhole-foundation discussion first
+- All changes pushed to evgeniko repos only (per user request)
