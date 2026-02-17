@@ -1,17 +1,83 @@
 # Cross-VM Hello World with Wormhole Executor
 
-Cross-chain messaging demo using Wormhole Executor for automatic relay between **Solana** and **EVM chains** (Sepolia).
+Cross-chain messaging demo using Wormhole Executor for automatic relay between **Solana**, **Fogo**, and **EVM chains**.
 
 ## Status
 
 | Route | Status | Notes |
 |-------|--------|-------|
-| EVM → Solana | ✅ Working | msgValue + API cost fixed |
-| Solana → Fogo | ✅ Working | Peer registration + msgValue fixed |
-| Solana → EVM | ⏳ Testing | VAAs signing, checking relay |
-| Fogo → Solana | 🔧 Needs testing | SVM↔SVM route |
+| EVM → Solana | ✅ **Working** | msgValue + API cost fixed |
+| Solana → Fogo | ✅ **Working** | Peer registration + msgValue fixed |
+| Solana → EVM | ⏳ Testing | VAAs signed, checking relay |
+| Fogo → Solana | ⏳ **Code ready** | Needs ~50 FOGO for relay test |
 
-See [STATUS.md](./STATUS.md) for detailed findings on SVM↔SVM messaging.
+## Call to Action
+
+### To complete Fogo → Solana testing:
+```bash
+# 1. Fund wallet with ~50 FOGO
+#    Address: 4VyQZpnMdUM59voCnCxsfNxkihPFFm57W3JWue8GHSzD
+
+# 2. Run the test
+npx tsx e2e/autoRelay.ts fogo-to-solana "Hello from Fogo!"
+```
+
+### To test other routes:
+```bash
+# Solana → Fogo
+npx tsx e2e/autoRelay.ts solana-to-fogo "Hello from Solana!"
+
+# Solana → EVM (Sepolia)
+npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
+```
+
+## Key Findings
+
+### 1. SVM↔SVM Peer Registration (Asymmetric!)
+- **Source chain:** Register destination **PROGRAM** ID (for routing)
+- **Dest chain:** Register source **EMITTER** PDA (for VAA verification)
+
+This differs from EVM↔EVM where the same address is registered on both sides.
+
+### 2. msgValue for SVM Destinations
+```typescript
+const SVM_MSG_VALUE_LAMPORTS = 15_000_000n; // ~0.015 SOL for rent/fees
+```
+
+### 3. wormhole-anchor-sdk Limitation
+The SDK hardcodes Wormhole program IDs. For cross-chain SVM support, we use raw CPI instead of SDK helpers. See `send_greeting.rs` for the pattern.
+
+## Architecture
+
+```
+Solana Devnet                           Fogo Testnet
+┌────────────────┐                    ┌────────────────┐
+│ HelloExecutor  │                    │ HelloExecutor  │
+│    (Anchor)    │                    │   (Anchor)     │
+└───────┬────────┘                    └───────▲────────┘
+        │                                     │
+        │ send_greeting()                     │ receive_greeting()
+        ▼                                     │
+┌────────────────┐                    ┌───────┴────────┐
+│ Wormhole Core  │ ──── Guardians ──▶ │ Wormhole Core  │
+│ (3u8h...)      │     sign VAA       │ (BhnQ...)      │
+└────────────────┘                    └────────────────┘
+        │                                     ▲
+        │ request_relay()                     │
+        ▼                                     │
+┌────────────────┐                            │
+│   Executor     │ ─────── relay ─────────────┘
+│ (execXUr...)   │
+└────────────────┘
+```
+
+## Deployed Contracts
+
+| Chain | Address | Status |
+|-------|---------|--------|
+| Solana Devnet | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` | ✅ |
+| Fogo Testnet | `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk` | ✅ |
+| Sepolia | `0x978d3cF51e9358C58a9538933FC3E277C29915C5` | ✅ |
 
 ## Quick Start
 
@@ -19,81 +85,32 @@ See [STATUS.md](./STATUS.md) for detailed findings on SVM↔SVM messaging.
 # Install
 npm install
 
-# Test Solana → Sepolia (works)
-npx tsx e2e/sendWithRelay.ts "Hello from Solana!"
+# Test Solana → Fogo
+npx tsx e2e/autoRelay.ts solana-to-fogo "Hello!"
+
+# Test Fogo → Solana (needs FOGO funding)
+npx tsx e2e/autoRelay.ts fogo-to-solana "Hello!"
 ```
-
-## Architecture
-
-```
-Solana Devnet                           Sepolia
-┌────────────────┐                    ┌────────────────┐
-│ HelloExecutor  │                    │ HelloWormhole  │
-│    (Anchor)    │                    │   (Solidity)   │
-└───────┬────────┘                    └───────▲────────┘
-        │                                     │
-        │ send_greeting()                     │ receiveMessage()
-        ▼                                     │
-┌────────────────┐                    ┌───────┴────────┐
-│ Wormhole Core  │ ──── Guardians ──▶ │ Wormhole Core  │
-└────────────────┘     sign VAA       └────────────────┘
-        │                                     ▲
-        │ request_relay()                     │
-        ▼                                     │
-┌────────────────┐                            │
-│   Executor     │ ─────── relay ─────────────┘
-└────────────────┘
-```
-
-## Deployed Contracts
-
-| Chain | Address |
-|-------|---------|
-| Solana Devnet | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` |
-| Sepolia | `0xC83dcae38111019e8efbA0B78CE6BA055e7A3f2c` |
 
 ## Key Files
 
 ```
 programs/hello-executor/src/
-├── lib.rs              # Entry point + Executor fallback handler
-├── resolver.rs         # Executor resolver for EVM→Solana
-└── instructions/
-    ├── send_greeting.rs
-    ├── receive_greeting.rs
-    └── request_relay.rs
+├── lib.rs                    # Entry point
+├── instructions/
+│   ├── send_greeting.rs      # Raw CPI to Wormhole (cross-chain compatible)
+│   ├── request_relay.rs      # Request Executor relay
+│   └── update_config.rs      # Update Wormhole addresses
 
 e2e/
-├── sendWithRelay.ts    # Solana → Sepolia test
-├── autoRelay.ts        # Solana ↔ Fogo test
-└── config.ts           # Chain configuration
-```
-
-## Development
-
-### Prerequisites
-
-- Rust 1.75+, Solana CLI 1.18.26, Anchor 0.29.0
-- Node.js 18+
-
-### Build
-
-```bash
-anchor build
-```
-
-### Deploy
-
-```bash
-# Solana Devnet
-solana config set --url devnet
-anchor deploy --provider.cluster devnet
+├── autoRelay.ts              # Combined test script (both directions)
+├── sendToSepolia.ts          # Solana → EVM test
+└── config.ts                 # Chain configuration
 ```
 
 ## Related
 
-- **EVM Contract**: [demo-hello-executor PR #2](https://github.com/wormhole-foundation/demo-hello-executor/pull/2)
-- **Bug Report**: [BUG_REPORT.md](./BUG_REPORT.md)
+- **EVM Contract**: [wormhole-foundation/demo-hello-executor#2](https://github.com/wormhole-foundation/demo-hello-executor/pull/2)
 - **Wormhole Executor Docs**: [docs.wormhole.com](https://docs.wormhole.com)
 
 ## License
