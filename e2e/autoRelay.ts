@@ -55,16 +55,26 @@ function getDiscriminator(name: string): Buffer {
     return Buffer.from(hash.digest().slice(0, 8));
 }
 
-function buildRelayInstructions(gasLimit: bigint): Buffer {
+// msgValue in lamports for SVM destinations (rent + priority fees)
+const SVM_MSG_VALUE_LAMPORTS = 15_000_000n; // 0.015 SOL
+
+function buildRelayInstructions(gasLimit: bigint, msgValue: bigint = SVM_MSG_VALUE_LAMPORTS): Buffer {
     return Buffer.from(serializeLayout(relayInstructionsLayout, {
-        requests: [{ request: { type: "GasInstruction", gasLimit, msgValue: 0n }}],
+        requests: [{ request: { type: "GasInstruction", gasLimit, msgValue }}],
     }));
 }
 
-async function getQuote(srcChain: number, dstChain: number, gasLimit: number = 200000) {
+async function getQuote(srcChain: number, dstChain: number, gasLimit: number = 200000, msgValue: bigint = SVM_MSG_VALUE_LAMPORTS) {
+    // Include relayInstructions with msgValue so API can calculate proper cost
+    const relayInstructions = buildRelayInstructions(BigInt(gasLimit), msgValue);
     const res = await fetch(`${EXECUTOR_API}/quote`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ srcChain, dstChain, gasLimit }),
+        body: JSON.stringify({ 
+            srcChain, 
+            dstChain, 
+            gasLimit,
+            relayInstructions: '0x' + relayInstructions.toString('hex'),
+        }),
     });
     if (!res.ok) throw new Error(`Quote failed: ${await res.text()}`);
     return res.json();
@@ -145,7 +155,11 @@ async function main() {
     const payee = new PublicKey(quoteBytes.slice(24, 56));
     console.log(`   Payee: ${payee.toBase58()}`);
     
-    const execAmount = BigInt(10_000_000); // 0.01 native token
+    // Use API's estimatedCost if available, otherwise calculate
+    // Add buffer for msgValue costs
+    const apiCost = quote.estimatedCost ? BigInt(quote.estimatedCost) : BigInt(10_000_000);
+    const execAmount = apiCost + SVM_MSG_VALUE_LAMPORTS; // Add msgValue to cover costs
+    console.log(`   Estimated cost: ${apiCost} + msgValue ${SVM_MSG_VALUE_LAMPORTS} = ${execAmount} lamports`);
     
     // Build send_greeting
     const sendData = Buffer.concat([

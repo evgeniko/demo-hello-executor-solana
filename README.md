@@ -6,9 +6,12 @@ Cross-chain messaging demo using Wormhole Executor for automatic relay between *
 
 | Route | Status | Notes |
 |-------|--------|-------|
-| Solana → Sepolia | ✅ Working | Auto-relay via Executor |
-| Sepolia → Solana | ⚠️ Blocked | [See bug report](./BUG_REPORT.md) |
-| Solana ↔ Fogo | ⚠️ Blocked | Executor infra not ready |
+| EVM → Solana | ✅ Working | msgValue + API cost fixed |
+| Solana → Fogo | ✅ Working | Peer registration + msgValue fixed |
+| Solana → EVM | ⏳ Testing | VAAs signing, checking relay |
+| Fogo → Solana | 🔧 Needs testing | SVM↔SVM route |
+
+See [STATUS.md](./STATUS.md) for detailed findings on SVM↔SVM messaging.
 
 ## Quick Start
 

@@ -1,67 +1,104 @@
-# Project Status - Solana ↔ EVM Cross-Chain Messaging
+# Project Status - Cross-VM Messaging with Wormhole Executor
 
 ## TL;DR
-**Automatic relay from Sepolia → Solana is 90% working!** The Executor calls our resolver, posts the VAA, but fails on a mysterious payment transfer. Needs fresh eyes on the Executor's behavior.
+**EVM↔Solana and Solana↔Fogo routes working!** Key fixes: msgValue for SVM destinations, proper peer registration for SVM↔SVM.
 
-## Current State (2026-02-11)
+## Current State (2026-02-17)
 
-### What Works
-| Direction | Automatic (Executor) | Manual Relay |
-|-----------|---------------------|--------------|
-| Solana → Sepolia | ✅ Works | ✅ Works |
-| Sepolia → Solana | ⚠️ 90% working | ✅ Works |
+| Direction | Status | Notes |
+|-----------|--------|-------|
+| EVM → Solana | ✅ Working | msgValue + API cost fixed |
+| Solana → Fogo | ✅ Working | Peer registration + msgValue fixed |
+| Solana → EVM | ⏳ Testing | VAAs signing (13-16), checking relay |
+| Fogo → Solana | 🔧 Needs testing | Next to validate |
 
-### The Problem
-Executor relay fails with `svm_simulation_failed`:
+## Key Fixes for SVM↔SVM
+
+### 1. Peer Registration (Asymmetric!)
+- **Source chain:** Register destination **PROGRAM** (for routing)
+- **Dest chain:** Register source **EMITTER** (for VAA verification)
+
+This is different from EVM↔EVM where you register the same address on both sides.
+
+### 2. msgValue for SVM Destinations
+Add ~15M lamports (~0.015 SOL) for rent/fees:
+```typescript
+const SOLANA_MSG_VALUE_LAMPORTS = 15_000_000n;
 ```
-Simulation logs:
-  Program 3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5 invoke [1]  ← Wormhole
-  ... (system program calls)
-  Program 3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5 success    ← VAA posted!
-  Program 11111111111111111111111111111111 invoke [1]              ← System transfer
-  Transfer: insufficient lamports 228303295604, need 228304481844  ← FAILS HERE
+
+### 3. Cost Calculation
+Use API's `estimatedCost` + `msgValue`:
+```typescript
+const cost = quote.estimatedCost + msgValue;
 ```
-
-**Key observation:** The Wormhole VAA posting succeeds, but then a System Program Transfer (instruction index 2) fails. This transfer is NOT from our resolver - it's added by the Executor (probably payment to quoter/payee).
-
-The ~0.001 SOL shortfall on a 228 SOL account is suspicious. Why is the Executor trying to transfer 228+ SOL?
 
 ## Deployed Contracts
-- **Solana Program:** `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp`
-- **Sepolia Contract:** `0xC83dcae38111019e8efbA0B78CE6BA055e7A3f2c`
 
-## What We Fixed
-1. **Peer registration:** Set to program ID (not emitter PDA) so Executor calls resolver
-2. **Resolver:** Use `RESOLVER_PUBKEY_POSTED_VAA` placeholder so Executor posts VAA first
-3. **Fallback handler:** Routes Executor discriminator (94b8a9decf089a7f) to resolver
+| Chain | Type | Address |
+|-------|------|---------|
+| Solana Devnet | Program | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` |
+| Sepolia | Contract | `0x978d3cF51e9358C58a9538933FC3E277C29915C5` |
+| Fogo Testnet | Program | TBD |
 
-## Executor Debug Info
-Last failed relay (TX: `0x6e1dc393dd8bfacc6216710eeb2687e714297a4ab66d94dfec96c818ae7d7950`):
+## Executor Program Addresses
+
+Both Solana Devnet and Fogo Testnet use the same Executor program:
 ```
-Status: aborted
-Failure: svm_simulation_failed
-Quote baseFee: 51043
-Payee: 0x4842781be7ba414c29029e6d7a70f6092e9d8beb
+execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYuDRciV
 ```
 
-Check status: 
+This is expected - SVM program addresses are deterministic based on deployer + seed.
+
+## Successful Transactions
+
+### Solana → Fogo (2026-02-17)
+- Status: `submitted`, 3 TXs completed
+- Fogo blocks: 692607960, 692608021, 692608070
+
+### EVM → Solana
+- TX: `0xbf34754ffae3495c18018176a6ebb4417001695cb63b8a5fa70258d0a925c891`
+- Status: `submitted`, 3 Solana TXs completed
+
+## Testing Commands
+
 ```bash
+# EVM → Solana
+cd ~/demo-hello-executor-evm
+npx tsx e2e/sendToSolana.ts "Hello from Sepolia!"
+
+# Solana → Fogo
+cd ~/demo-hello-executor-solana
+npx tsx e2e/sendToFogo.ts "Hello from Solana!"
+
+# Fogo → Solana (needs testing)
+npx tsx e2e/sendFromFogo.ts "Hello from Fogo!"
+
+# Check relay status
 curl -s -X POST "https://executor-testnet.labsapis.com/v0/status/tx" \
   -H "Content-Type: application/json" \
-  -d '{"chainId": 10002, "txHash": "<TX_HASH>"}'
+  -d '{"chainId": <CHAIN_ID>, "txHash": "<TX_HASH>"}'
 ```
 
 ## Files
-- `programs/hello-executor/src/resolver.rs` - Executor resolver implementation
-- `e2e/postVaaCertusone.ts` - Manual VAA posting to Solana
-- `e2e/receiveGreeting.ts` - Manual receive_greeting call
-- `e2e/sendToSepolia.ts` - Send from Solana with Executor
 
-## Questions for Fresh Investigation
-1. Why is the Executor's payment transfer trying to move 228+ SOL?
-2. Is the quoter/payee address correctly configured on testnet?
-3. Is there a Solana testnet Executor config issue?
+### Solana Repo
+- `programs/hello-executor/src/resolver.rs` - Executor resolver
+- `e2e/sendToFogo.ts` - Solana → Fogo test
+- `e2e/sendToSepolia.ts` - Solana → Sepolia test
 
-## Repo
-https://github.com/evgeniko/demo-hello-executor-solana
-Branch: `feat/executor-resolver-evm-to-solana`
+### EVM Repo
+- `src/HelloWormhole.sol` - EVM contract with msgValue support
+- `e2e/sendToSolana.ts` - Sepolia → Solana test
+
+## Related PRs
+
+- **EVM side:** [wormhole-foundation/demo-hello-executor#2](https://github.com/wormhole-foundation/demo-hello-executor/pull/2)
+- **Solana side:** https://github.com/evgeniko/demo-hello-executor-solana
+
+## Next Steps
+
+1. ✅ ~~Fix EVM → Solana relay~~
+2. ✅ ~~Fix Solana → Fogo relay~~
+3. ⏳ Confirm Solana → EVM relay completes
+4. 🔧 Test Fogo → Solana route
+5. 📝 Document SVM↔SVM patterns for Wormhole docs
