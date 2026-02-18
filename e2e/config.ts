@@ -1,138 +1,152 @@
 /**
- * Configuration for cross-chain E2E tests
- * Supports Solana Devnet and other SVM chains
+ * Configuration for EVM ↔ Solana cross-chain E2E tests
  */
 
 import { Keypair, PublicKey } from '@solana/web3.js';
-import { toChainId } from '@wormhole-foundation/sdk-base';
-import type { ChainConfig } from './types.js';
+import { ethers } from 'ethers';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
 
 dotenv.config();
 
-// Load keypair from file or environment
-function loadKeypair(envVar: string, filePath?: string): Keypair {
-    // Try environment variable first (base58 encoded)
+// ============================================================================
+// Wormhole Chain IDs
+// ============================================================================
+export const CHAIN_ID_SOLANA = 1;
+export const CHAIN_ID_SEPOLIA = 10002;
+
+// ============================================================================
+// Contract / Program Addresses
+// ============================================================================
+
+// Solana Devnet - HelloExecutor program
+export const HELLO_EXECUTOR_SOLANA = process.env.HELLO_EXECUTOR_SOLANA || 
+    '5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp';
+
+// Sepolia - HelloWormhole contract (with cross-VM support)
+export const HELLO_WORMHOLE_SEPOLIA = process.env.HELLO_WORMHOLE_SEPOLIA || 
+    '0x978d3cF51e9358C58a9538933FC3E277C29915C5';
+
+// Wormhole infrastructure
+export const WORMHOLE_CORE_BRIDGE_SOLANA = '3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5';
+export const EXECUTOR_PROGRAM_SOLANA = 'execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYyuDRciV';
+
+// ============================================================================
+// RPC URLs
+// ============================================================================
+export const SOLANA_RPC = process.env.SOLANA_DEVNET_RPC || 'https://api.devnet.solana.com';
+export const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
+
+// ============================================================================
+// Executor API
+// ============================================================================
+export const EXECUTOR_API = 'https://executor-testnet.labsapis.com/v0';
+
+// Solana-specific: msgValue in LAMPORTS for rent, priority fees
+// ~0.015 SOL covers typical Solana transaction costs
+export const SOLANA_MSG_VALUE_LAMPORTS = 15_000_000n;
+
+// ============================================================================
+// Keypair Loading
+// ============================================================================
+
+export function loadSolanaKeypair(envVar = 'PRIVATE_KEY_SOLANA'): Keypair {
+    // Try environment variable first
     const envKey = process.env[envVar];
     if (envKey) {
         try {
-            // Try parsing as JSON array
             const parsed = JSON.parse(envKey);
             if (Array.isArray(parsed)) {
                 return Keypair.fromSecretKey(Uint8Array.from(parsed));
             }
         } catch {
-            // Try parsing as base58
             const bs58 = require('bs58');
             return Keypair.fromSecretKey(bs58.decode(envKey));
         }
     }
 
-    // Try file path
-    if (filePath && fs.existsSync(filePath)) {
-        const keyData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        return Keypair.fromSecretKey(Uint8Array.from(keyData));
+    // Try common keypair paths
+    const paths = [
+        process.env.SOLANA_KEYPAIR_PATH,
+        path.join(process.env.HOME || '', '.config/solana/test-wallets/solana-devnet.json'),
+        path.join(process.env.HOME || '', '.config/solana/id.json'),
+    ].filter(Boolean) as string[];
+
+    for (const p of paths) {
+        if (fs.existsSync(p)) {
+            const keyData = JSON.parse(fs.readFileSync(p, 'utf-8'));
+            return Keypair.fromSecretKey(Uint8Array.from(keyData));
+        }
     }
 
-    // Default to ~/.config/solana/id.json
-    const defaultPath = path.join(
-        process.env.HOME || '',
-        '.config/solana/id.json'
-    );
-    if (fs.existsSync(defaultPath)) {
-        const keyData = JSON.parse(fs.readFileSync(defaultPath, 'utf-8'));
-        return Keypair.fromSecretKey(Uint8Array.from(keyData));
-    }
-
-    throw new Error(`No keypair found for ${envVar}`);
+    throw new Error(`No Solana keypair found. Set ${envVar} or provide a keypair file.`);
 }
 
-// Wormhole Chain IDs
-export const CHAIN_ID_SOLANA = 1;
-export const CHAIN_ID_FOGO = 51;
+export function loadEvmWallet(): ethers.Wallet {
+    const privateKey = process.env.PRIVATE_KEY_SEPOLIA;
+    if (!privateKey) {
+        throw new Error('PRIVATE_KEY_SEPOLIA not set');
+    }
+    const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC);
+    return new ethers.Wallet(privateKey, provider);
+}
 
-// Program addresses (placeholder - will be updated after deployment)
-const HELLO_EXECUTOR_SOLANA =
-    process.env.HELLO_EXECUTOR_SOLANA ||
-    'He11oExec1111111111111111111111111111111111';
-const HELLO_EXECUTOR_FOGO =
-    process.env.HELLO_EXECUTOR_FOGO ||
-    'He11oExec1111111111111111111111111111111111';
+// ============================================================================
+// Address Conversion Utilities
+// ============================================================================
 
-// Wormhole Core Bridge addresses
-export const WORMHOLE_CORE_BRIDGE_SOLANA_DEVNET =
-    '3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5';
-export const WORMHOLE_CORE_BRIDGE_FOGO_TESTNET =
-    'worm2mrQkG1B1KTz37erMfWN8anHkSK24nzca7UD8BB';
+/**
+ * Convert EVM address (20 bytes) to bytes32 (left-padded with zeros)
+ */
+export function evmAddressToBytes32(address: string): Uint8Array {
+    const cleaned = address.toLowerCase().replace(/^0x/, '');
+    const padded = cleaned.padStart(64, '0');
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+        bytes[i] = parseInt(padded.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+}
 
-// Executor program addresses
-export const EXECUTOR_PROGRAM_SOLANA =
-    'execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYyuDRciV';
-export const EXECUTOR_PROGRAM_FOGO =
-    'execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYyuDRciV';
+/**
+ * Convert Solana PublicKey to bytes32 (native format, no padding needed)
+ */
+export function solanaAddressToBytes32(pubkey: PublicKey): Uint8Array {
+    return pubkey.toBytes();
+}
 
-// RPC URLs
-const SOLANA_DEVNET_RPC =
-    process.env.SOLANA_DEVNET_RPC || 'https://api.devnet.solana.com';
-const FOGO_TESTNET_RPC =
-    process.env.FOGO_TESTNET_RPC || 'https://testnet.fogo.io/rpc';
+/**
+ * Derive the emitter PDA for a Solana program
+ * EVM contracts should register this PDA as the peer, not the program ID!
+ */
+export function deriveEmitterPda(programId: PublicKey): PublicKey {
+    const [emitterPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('emitter')],
+        programId
+    );
+    return emitterPda;
+}
+
+// ============================================================================
+// Config Object
+// ============================================================================
 
 export const config = {
     solana: {
-        chain: 'Solana' as const,
-        network: 'Testnet' as const,
-        rpcUrl: SOLANA_DEVNET_RPC,
-        keypair: loadKeypair('PRIVATE_KEY_SOLANA'),
+        rpcUrl: SOLANA_RPC,
         programId: new PublicKey(HELLO_EXECUTOR_SOLANA),
         wormholeChainId: CHAIN_ID_SOLANA,
-        wormholeCoreBridge: new PublicKey(WORMHOLE_CORE_BRIDGE_SOLANA_DEVNET),
+        wormholeCoreBridge: new PublicKey(WORMHOLE_CORE_BRIDGE_SOLANA),
         executorProgram: new PublicKey(EXECUTOR_PROGRAM_SOLANA),
-    } as ChainConfig & {
-        wormholeCoreBridge: PublicKey;
-        executorProgram: PublicKey;
     },
-    fogo: {
-        chain: 'Fogo' as const,
-        network: 'Testnet' as const,
-        rpcUrl: FOGO_TESTNET_RPC,
-        keypair: loadKeypair('PRIVATE_KEY_FOGO'),
-        programId: new PublicKey(HELLO_EXECUTOR_FOGO),
-        wormholeChainId: CHAIN_ID_FOGO,
-        wormholeCoreBridge: new PublicKey(WORMHOLE_CORE_BRIDGE_FOGO_TESTNET),
-        executorProgram: new PublicKey(EXECUTOR_PROGRAM_FOGO),
-    } as ChainConfig & {
-        wormholeCoreBridge: PublicKey;
-        executorProgram: PublicKey;
+    sepolia: {
+        rpcUrl: SEPOLIA_RPC,
+        contractAddress: HELLO_WORMHOLE_SEPOLIA,
+        wormholeChainId: CHAIN_ID_SEPOLIA,
+    },
+    executor: {
+        apiUrl: EXECUTOR_API,
+        solanaMsgValue: SOLANA_MSG_VALUE_LAMPORTS,
     },
 };
-
-export function validateConfig(): void {
-    const errors: string[] = [];
-    const defaultKeypairPath = path.join(
-        process.env.HOME || '',
-        '.config/solana/id.json'
-    );
-
-    if (!process.env.PRIVATE_KEY_SOLANA && !fs.existsSync(defaultKeypairPath)) {
-        errors.push('PRIVATE_KEY_SOLANA not set and no default keypair found');
-    }
-
-    if (!process.env.PRIVATE_KEY_FOGO && !fs.existsSync(defaultKeypairPath)) {
-        errors.push('PRIVATE_KEY_FOGO not set and no default keypair found');
-    }
-
-    if (errors.length > 0) {
-        console.error('Configuration errors:');
-        errors.forEach((e) => console.error(`  - ${e}`));
-        process.exit(1);
-    }
-
-    console.log('Configuration validated:');
-    console.log(`  Solana Devnet RPC: ${config.solana.rpcUrl}`);
-    console.log(`  Fogo Testnet RPC: ${config.fogo.rpcUrl}`);
-    console.log(`  Solana Program: ${config.solana.programId.toBase58()}`);
-    console.log(`  Fogo Program: ${config.fogo.programId.toBase58()}`);
-    console.log(`  Wallet: ${config.solana.keypair.publicKey.toBase58()}`);
-}

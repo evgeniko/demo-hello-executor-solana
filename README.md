@@ -1,6 +1,6 @@
 # Cross-VM Hello World with Wormhole Executor
 
-Cross-chain messaging demo using Wormhole Executor for automatic relay between **Solana** and **EVM chains** (Sepolia).
+Cross-chain messaging demo using Wormhole Executor for automatic relay between **Solana ↔ EVM** (Sepolia).
 
 ## Status
 
@@ -15,9 +15,18 @@ Cross-chain messaging demo using Wormhole Executor for automatic relay between *
 # Install dependencies
 npm install
 
+# Set up environment
+cp e2e/.env.example e2e/.env
+# Edit .env with your private keys
+
+# Register peers (run once, both directions)
+npx tsx e2e/setupPeers.ts
+
 # Send from Solana to Sepolia
 npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
 ```
+
+> For Sepolia → Solana, see the [EVM demo repo](https://github.com/wormhole-foundation/demo-hello-executor/pull/2).
 
 ## Architecture
 
@@ -56,8 +65,8 @@ Solana Devnet                              Sepolia
 
 For SVM ↔ EVM messaging, peer registration is **asymmetric**:
 
-- **Solana side:** Register the EVM contract address (as bytes32)
-- **EVM side:** Register the Solana program's **emitter PDA** (not the program ID)
+- **Solana side:** Register the EVM contract address (as bytes32, left-padded)
+- **EVM side:** Register the Solana program's **emitter PDA** (not the program ID!)
 
 ```typescript
 // Solana emitter PDA derivation
@@ -69,10 +78,10 @@ const [emitterPda] = PublicKey.findProgramAddressSync(
 
 ### 2. msgValue for SVM Destinations
 
-When sending TO Solana/SVM chains, include `msgValue` for rent and fees:
+When sending **TO** Solana/SVM chains, include `msgValue` for rent and fees:
 
 ```typescript
-const SVM_MSG_VALUE_LAMPORTS = 15_000_000n; // ~0.015 SOL
+const SOLANA_MSG_VALUE_LAMPORTS = 15_000_000n; // ~0.015 SOL
 ```
 
 ### 3. Wormhole Chain IDs
@@ -95,29 +104,25 @@ programs/hello-executor/src/
 └── resolver.rs               # Executor resolver
 
 e2e/
-├── sendToSepolia.ts          # Solana → Sepolia test
-├── autoRelay.ts              # Generic relay test script
+├── sendToSepolia.ts          # Solana → Sepolia demo
+├── setupPeers.ts             # Register peers (both directions)
 ├── config.ts                 # Chain configuration
-├── executor.ts               # Executor API helpers
-└── messaging.ts              # Messaging helpers
+├── relay.ts                  # Relay instruction encoding
+└── types.ts                  # TypeScript types
 ```
 
-## Testing
+## Environment Variables
 
-### Prerequisites
-
-1. Solana CLI configured for devnet
-2. Funded wallet at `~/.config/solana/test-wallets/solana-devnet.json`
-3. Node.js 18+
-
-### Run Tests
+Create `e2e/.env`:
 
 ```bash
-# Solana → Sepolia
-npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
+# Solana keypair (JSON array or base58)
+PRIVATE_KEY_SOLANA=[1,2,3,...] 
+# Or use a file path:
+# SOLANA_KEYPAIR_PATH=~/.config/solana/id.json
 
-# Check relay status
-# The script will poll the Executor API and report when complete
+# Sepolia private key (for peer registration on EVM side)
+PRIVATE_KEY_SEPOLIA=0x...
 ```
 
 ## Related
