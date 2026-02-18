@@ -19,7 +19,7 @@ declare_id!("J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk");
 /// # Hello Executor
 ///
 /// A cross-chain Hello World application using Wormhole's Executor service
-/// for automatic message relay between SVM chains (Solana <-> Fogo).
+/// for automatic message relay across chains.
 pub mod hello_executor {
     use super::*;
 

@@ -1,6 +1,6 @@
 /**
  * Configuration for cross-chain E2E tests
- * Supports Solana Devnet <-> Fogo Testnet
+ * Supports Solana Devnet and other SVM chains
  */
 
 import { Keypair, PublicKey } from '@solana/web3.js';

@@ -1,10 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * Automatic relay between Solana Devnet and Fogo Testnet via Executor
+ * Automatic relay between SVM chains via Executor
  * 
  * Usage:
  *   npx tsx e2e/autoRelay.ts solana-to-fogo [message]
  *   npx tsx e2e/autoRelay.ts fogo-to-solana [message]
+ * 
+ * Note: Requires guardian support for the target chain.
  */
 
 import { Connection, Keypair, PublicKey, SystemProgram, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY, Transaction, TransactionInstruction, sendAndConfirmTransaction, ComputeBudgetProgram } from '@solana/web3.js';

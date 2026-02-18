@@ -1,8 +1,8 @@
 /**
  * E2E Test for SVM Cross-Chain Hello World with Wormhole Executor
  *
- * This test demonstrates sending a greeting from Solana Devnet to Fogo Testnet
- * (or vice versa) using Wormhole's messaging and Executor service.
+ * This test demonstrates sending a greeting between SVM chains
+ * using Wormhole's messaging and Executor service.
  */
 
 import { config, validateConfig, CHAIN_ID_SOLANA, CHAIN_ID_FOGO } from './config.js';

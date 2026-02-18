@@ -126,10 +126,6 @@ npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
 - **Wormhole Docs:** [docs.wormhole.com](https://docs.wormhole.com)
 - **Executor Explorer:** [wormholelabs-xyz.github.io/executor-explorer](https://wormholelabs-xyz.github.io/executor-explorer)
 
-## Experimental: Fogo Testnet
-
-Fogo testnet support is implemented but currently **blocked** — Wormhole guardians are not yet observing Fogo (chain 51). The code is ready and will work once guardian support is enabled.
-
 ## License
 
 MIT
