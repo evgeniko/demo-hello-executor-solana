@@ -1,51 +1,32 @@
 /**
- * Type definitions for Wormhole Executor SVM integration
+ * Type definitions for cross-chain E2E tests
  */
 
-import type { Network, Chain } from '@wormhole-foundation/sdk-base';
-import type { Keypair, PublicKey } from '@solana/web3.js';
+import { Keypair, PublicKey } from '@solana/web3.js';
 
 export interface ChainConfig {
-    chain: Chain;
-    network: Network;
+    chain: string;
+    network: 'Testnet' | 'Mainnet';
     rpcUrl: string;
     keypair: Keypair;
     programId: PublicKey;
     wormholeChainId: number;
 }
 
-export interface ExecutorQuoteParams {
-    srcChain: number;
-    dstChain: number;
-    relayInstructions?: string;
-}
-
 export interface ExecutorQuote {
     signedQuote: string;
-    estimatedCost?: string;
+    estimatedCost: string;
+    parsedQuote?: {
+        baseFee: bigint;
+        dstGasPrice: bigint;
+        srcPrice: bigint;
+        dstPrice: bigint;
+    };
 }
 
-export interface ExecutorCapabilities {
-    requestPrefixes: string[];
-    gasDropOffLimit?: string;
-    maxGasLimit?: string;
-    maxMsgValue?: string;
-}
-
-export interface SendGreetingResult {
-    signature: string;
-    sequence: bigint;
-}
-
-export interface VAAData {
-    vaa: string;
-    timestamp: string;
-}
-
-export interface ProgramAccounts {
-    config: PublicKey;
-    wormholeEmitter: PublicKey;
-    wormholeBridge: PublicKey;
-    wormholeFeeCollector: PublicKey;
-    wormholeSequence: PublicKey;
+export interface ExecutorStatus {
+    status: 'pending' | 'submitted' | 'completed' | 'aborted' | 'underpaid';
+    txHash?: string;
+    failureCause?: string;
+    txs?: Array<{ txHash: string }>;
 }

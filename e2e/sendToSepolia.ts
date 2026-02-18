@@ -1,11 +1,13 @@
 #!/usr/bin/env tsx
 /**
- * Send a greeting from Solana Devnet to Sepolia via Wormhole Executor
+ * Send a greeting from Solana Devnet → Sepolia via Wormhole Executor
+ * 
+ * Usage:
+ *   npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
  */
 
 import { 
     Connection, 
-    Keypair, 
     PublicKey, 
     SystemProgram,
     SYSVAR_CLOCK_PUBKEY,
@@ -15,33 +17,19 @@ import {
     sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { createHash } from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
 
-// Configuration
-const SOLANA_RPC = process.env.SOLANA_DEVNET_RPC || 'https://api.devnet.solana.com';
-const PROGRAM_ID = new PublicKey(process.env.HELLO_EXECUTOR_SOLANA || '5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp');
-const KEYPAIR_PATH = process.env.SOLANA_KEYPAIR_PATH || 
-    path.join(process.env.HOME || '', '.config/solana/test-wallets/solana-devnet.json');
+import {
+    config,
+    loadSolanaKeypair,
+    CHAIN_ID_SOLANA,
+    CHAIN_ID_SEPOLIA,
+    EXECUTOR_API,
+} from './config.js';
 
-// Wormhole
-const WORMHOLE_PROGRAM = new PublicKey('3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5');
-const CHAIN_ID_SOLANA = 1;
-const CHAIN_ID_SEPOLIA = 10002;
+// ============================================================================
+// PDA Derivations
+// ============================================================================
 
-// Executor
-const EXECUTOR_PROGRAM = new PublicKey('execXUrAsMnqMmTHj5m7N1YQgsDz3cwGLYCYyuDRciV');
-const EXECUTOR_API = 'https://executor-testnet.labsapis.com/v0';
-
-function loadKeypair(): Keypair {
-    if (!fs.existsSync(KEYPAIR_PATH)) {
-        throw new Error(`Keypair not found at ${KEYPAIR_PATH}`);
-    }
-    const keyData = JSON.parse(fs.readFileSync(KEYPAIR_PATH, 'utf-8'));
-    return Keypair.fromSecretKey(Uint8Array.from(keyData));
-}
-
-// PDAs
 function deriveConfigPda(programId: PublicKey): PublicKey {
     const [pda] = PublicKey.findProgramAddressSync([Buffer.from('config')], programId);
     return pda;
@@ -77,208 +65,170 @@ function deriveMessagePda(programId: PublicKey, sequence: bigint): PublicKey {
     return pda;
 }
 
-// Discriminators
+// ============================================================================
+// Helpers
+// ============================================================================
+
 function getSendGreetingDiscriminator(): Buffer {
     const hash = createHash('sha256');
     hash.update('global:send_greeting');
     return Buffer.from(hash.digest().slice(0, 8));
 }
 
-// Get current sequence
 async function getCurrentSequence(connection: Connection, sequencePda: PublicKey): Promise<bigint> {
     const accountInfo = await connection.getAccountInfo(sequencePda);
     if (!accountInfo) return 1n;
     return BigInt(accountInfo.data.readBigUInt64LE(0)) + 1n;
 }
 
-// Poll for VAA
-async function pollForVAA(
-    emitterChain: number,
-    emitterAddress: string,
-    sequence: number,
-    timeoutMs: number = 120000
-): Promise<any> {
-    const startTime = Date.now();
+async function pollForVAA(emitterChain: number, emitterAddress: string, sequence: number): Promise<any> {
     const baseUrl = 'https://api.testnet.wormholescan.io/api/v1/vaas';
     const paddedEmitter = emitterAddress.padStart(64, '0');
     const url = `${baseUrl}/${emitterChain}/${paddedEmitter}/${sequence}`;
 
-    console.log(`\nPolling for VAA: ${url}`);
+    console.log(`\nPolling for VAA...`);
 
-    while (Date.now() - startTime < timeoutMs) {
+    for (let i = 0; i < 36; i++) { // 3 minutes max
         try {
             const response = await fetch(url);
             if (response.ok) {
                 const data: any = await response.json();
-                if (data.data?.vaa) {
-                    return data.data;
-                }
+                if (data.data?.vaa) return data.data;
             }
-        } catch (e) {
-            // Ignore errors, keep polling
-        }
+        } catch {}
         await new Promise(r => setTimeout(r, 5000));
         process.stdout.write('.');
     }
     return null;
 }
 
-// Poll executor status
-async function pollExecutorStatus(
-    txHash: string,
-    timeoutMs: number = 120000
-): Promise<any> {
-    const startTime = Date.now();
+async function pollExecutorStatus(txHash: string): Promise<any> {
     const url = `${EXECUTOR_API}/status/tx?srcChain=Solana&txHash=${txHash}&env=Testnet`;
 
-    console.log(`\nPolling executor status: ${url}`);
+    console.log(`\nPolling executor status...`);
 
-    while (Date.now() - startTime < timeoutMs) {
+    for (let i = 0; i < 36; i++) { // 3 minutes max
         try {
             const response = await fetch(url);
             if (response.ok) {
                 const data: any = await response.json();
                 if (Array.isArray(data) && data.length > 0) {
                     const status = data[0].status;
-                    if (status === 'completed' || status === 'error' || status === 'underpaid') {
-                        return data;
+                    if (['completed', 'error', 'underpaid'].includes(status)) {
+                        return data[0];
                     }
                 }
             }
-        } catch (e) {
-            // Ignore, keep polling
-        }
+        } catch {}
         await new Promise(r => setTimeout(r, 5000));
         process.stdout.write('*');
     }
     return null;
 }
 
+// ============================================================================
+// Main
+// ============================================================================
+
 async function main() {
-    console.log('🚀 Sending Greeting: Solana Devnet → Sepolia\n');
+    console.log('═'.repeat(60));
+    console.log('  🌊 Solana Devnet → Sepolia');
+    console.log('═'.repeat(60) + '\n');
 
     const greeting = process.argv[2] || 'Hello from Solana! 🌊';
     console.log(`Message: "${greeting}"`);
 
     // Load keypair
-    const keypair = loadKeypair();
-    console.log(`\nWallet: ${keypair.publicKey.toBase58()}`);
+    const keypair = loadSolanaKeypair();
+    console.log(`Wallet: ${keypair.publicKey.toBase58()}`);
 
     // Connect
-    const connection = new Connection(SOLANA_RPC, 'confirmed');
+    const connection = new Connection(config.solana.rpcUrl, 'confirmed');
     const balance = await connection.getBalance(keypair.publicKey);
     console.log(`Balance: ${balance / 1e9} SOL`);
 
+    const programId = config.solana.programId;
+    const wormholeProgram = config.solana.wormholeCoreBridge;
+
     // Derive PDAs
-    const configPda = deriveConfigPda(PROGRAM_ID);
-    const emitterPda = deriveEmitterPda(PROGRAM_ID);
-    const wormholeBridge = deriveWormholeBridge(WORMHOLE_PROGRAM);
-    const wormholeFeeCollector = deriveWormholeFeeCollector(WORMHOLE_PROGRAM);
-    const wormholeSequence = deriveWormholeSequence(WORMHOLE_PROGRAM, emitterPda);
+    const configPda = deriveConfigPda(programId);
+    const emitterPda = deriveEmitterPda(programId);
+    const wormholeBridge = deriveWormholeBridge(wormholeProgram);
+    const wormholeFeeCollector = deriveWormholeFeeCollector(wormholeProgram);
+    const wormholeSequence = deriveWormholeSequence(wormholeProgram, emitterPda);
 
     // Get current sequence
     const sequence = await getCurrentSequence(connection, wormholeSequence);
-    const wormholeMessage = deriveMessagePda(PROGRAM_ID, sequence);
+    const wormholeMessage = deriveMessagePda(programId, sequence);
 
     console.log(`\nSequence: ${sequence}`);
-    console.log(`Message PDA: ${wormholeMessage.toBase58()}`);
 
-    // Build instruction data for send_greeting
-    // Format: [discriminator (8 bytes)][string length (4 bytes LE)][string bytes]
+    // Build instruction
     const discriminator = getSendGreetingDiscriminator();
     const greetingBytes = Buffer.from(greeting, 'utf-8');
     const lengthBuffer = Buffer.alloc(4);
     lengthBuffer.writeUInt32LE(greetingBytes.length);
     
-    const instructionData = Buffer.concat([
-        discriminator,
-        lengthBuffer,
-        greetingBytes,
-    ]);
+    const instructionData = Buffer.concat([discriminator, lengthBuffer, greetingBytes]);
 
-    // Build instruction
     const instruction = new TransactionInstruction({
         keys: [
-            { pubkey: keypair.publicKey, isSigner: true, isWritable: true }, // payer
-            { pubkey: configPda, isSigner: false, isWritable: false }, // config
-            { pubkey: WORMHOLE_PROGRAM, isSigner: false, isWritable: false }, // wormhole_program
-            { pubkey: wormholeBridge, isSigner: false, isWritable: true }, // wormhole_bridge
-            { pubkey: wormholeFeeCollector, isSigner: false, isWritable: true }, // wormhole_fee_collector
-            { pubkey: emitterPda, isSigner: false, isWritable: true }, // wormhole_emitter
-            { pubkey: wormholeSequence, isSigner: false, isWritable: true }, // wormhole_sequence
-            { pubkey: wormholeMessage, isSigner: false, isWritable: true }, // wormhole_message
-            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
-            { pubkey: SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false }, // clock
-            { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false }, // rent
+            { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
+            { pubkey: configPda, isSigner: false, isWritable: false },
+            { pubkey: wormholeProgram, isSigner: false, isWritable: false },
+            { pubkey: wormholeBridge, isSigner: false, isWritable: true },
+            { pubkey: wormholeFeeCollector, isSigner: false, isWritable: true },
+            { pubkey: emitterPda, isSigner: false, isWritable: true },
+            { pubkey: wormholeSequence, isSigner: false, isWritable: true },
+            { pubkey: wormholeMessage, isSigner: false, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+            { pubkey: SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false },
+            { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
         ],
-        programId: PROGRAM_ID,
+        programId: programId,
         data: instructionData,
     });
 
-    // Send transaction
-    const transaction = new Transaction().add(instruction);
-
-    console.log('\n📤 Sending greeting transaction...');
+    // Send
+    console.log('\n📤 Sending transaction...');
     const signature = await sendAndConfirmTransaction(
         connection,
-        transaction,
+        new Transaction().add(instruction),
         [keypair],
         { commitment: 'confirmed' }
     );
 
-    console.log(`\n✅ Greeting sent!`);
-    console.log(`Transaction: ${signature}`);
+    console.log(`\n✅ Transaction confirmed!`);
+    console.log(`TX: ${signature}`);
     console.log(`Explorer: https://explorer.solana.com/tx/${signature}?cluster=devnet`);
 
-    // Get emitter address in hex
-    const emitterHex = Buffer.from(emitterPda.toBytes()).toString('hex');
-    console.log(`\nEmitter: ${emitterHex}`);
-
     // Wait for VAA
-    console.log('\n⏳ Waiting for VAA to be signed by Wormhole guardians...');
-    const vaaData = await pollForVAA(CHAIN_ID_SOLANA, emitterHex, Number(sequence), 180000);
+    const emitterHex = Buffer.from(emitterPda.toBytes()).toString('hex');
+    const vaaData = await pollForVAA(CHAIN_ID_SOLANA, emitterHex, Number(sequence));
 
     if (vaaData) {
         console.log('\n\n✅ VAA signed!');
-        console.log(`VAA ID: ${vaaData.id}`);
-        console.log(`Timestamp: ${vaaData.timestamp}`);
     } else {
-        console.log('\n\n⚠️  VAA not signed within timeout.');
-        console.log('Check Wormhole Scan manually:');
-        console.log(`https://testnet.wormholescan.io/#/tx/${signature}`);
+        console.log('\n\n⚠️  VAA not signed within timeout');
     }
 
     // Poll executor status
-    console.log('\n⏳ Waiting for Executor relay...');
-    const executorStatus = await pollExecutorStatus(signature, 180000);
+    const status = await pollExecutorStatus(signature);
 
-    if (executorStatus) {
-        console.log('\n\n📊 Executor Status:');
-        console.log(JSON.stringify(executorStatus, null, 2));
-        
-        const relay = executorStatus[0];
-        if (relay?.status === 'completed') {
-            console.log('\n🎉 SUCCESS! Message delivered to Sepolia!');
-            console.log(`Destination TX: ${relay.txHash}`);
-        } else if (relay?.status === 'underpaid') {
-            console.log('\n❌ UNDERPAID - Need to send with Executor relay request');
-        }
-    } else {
-        console.log('\n\n⚠️  Executor status not available within timeout.');
+    if (status?.status === 'completed') {
+        console.log('\n\n🎉 SUCCESS! Message delivered to Sepolia!');
+        console.log(`Destination TX: ${status.txHash}`);
+    } else if (status) {
+        console.log(`\n\n⚠️  Executor status: ${status.status}`);
     }
 
-    console.log('\n' + '='.repeat(60));
-    console.log('Debug URLs:');
-    console.log(`  Wormhole Scan: https://testnet.wormholescan.io/#/tx/${signature}`);
-    console.log(`  Executor Explorer: https://wormholelabs-xyz.github.io/executor-explorer/#/tx/${signature}?endpoint=https%3A%2F%2Fexecutor-testnet.labsapis.com&env=Testnet`);
-    console.log('='.repeat(60));
+    console.log('\n' + '─'.repeat(60));
+    console.log('Links:');
+    console.log(`  Wormhole: https://testnet.wormholescan.io/#/tx/${signature}`);
+    console.log(`  Executor: https://wormholelabs-xyz.github.io/executor-explorer/#/tx/${signature}?endpoint=https%3A%2F%2Fexecutor-testnet.labsapis.com&env=Testnet`);
 }
 
 main().catch((error) => {
     console.error('\n❌ Error:', error.message || error);
-    if (error.logs) {
-        console.log('\nProgram logs:');
-        error.logs.forEach((log: string) => console.log('  ', log));
-    }
     process.exit(1);
 });
