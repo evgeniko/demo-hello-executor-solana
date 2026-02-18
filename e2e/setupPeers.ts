@@ -39,16 +39,22 @@ const __dirname = path.dirname(__filename);
 // ============================================================================
 
 function loadIdl(): Idl {
-    const idlPath = path.join(__dirname, '..', 'solana', 'idls', 'hello_executor.json');
-    if (!fs.existsSync(idlPath)) {
-        // Try alternate path
-        const altPath = path.join(__dirname, '..', 'solana', 'target', 'idl', 'hello_executor.json');
-        if (fs.existsSync(altPath)) {
-            return JSON.parse(fs.readFileSync(altPath, 'utf-8'));
+    // Try paths in order of preference
+    const candidates = [
+        path.join(__dirname, 'abi', 'hello_executor.json'),   // e2e/abi/ (committed)
+        path.join(__dirname, '..', 'idls', 'hello_executor.json'), // idls/ (root)
+        path.join(__dirname, '..', 'target', 'idl', 'hello_executor.json'), // anchor build output
+    ];
+
+    for (const p of candidates) {
+        if (fs.existsSync(p)) {
+            return JSON.parse(fs.readFileSync(p, 'utf-8'));
         }
-        throw new Error(`IDL not found. Run 'anchor build' first.`);
     }
-    return JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
+
+    throw new Error(
+        `IDL not found. Checked:\n${candidates.map(p => `  - ${p}`).join('\n')}\nRun 'anchor build' to generate it.`
+    );
 }
 
 function derivePeerPda(programId: PublicKey, chainId: number): PublicKey {

@@ -9,3 +9,4 @@ target/
 
 e2e/.env
 e2e/.env.*
+!e2e/.env.example

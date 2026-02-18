@@ -1,7 +1,7 @@
 {
   "name": "demo-hello-executor-solana",
   "version": "1.0.0",
-  "description": "SVM cross-chain Hello World demo using Wormhole Executor (Solana <-> Fogo)",
+  "description": "SVM cross-chain Hello World demo using Wormhole Executor (Solana <-> Sepolia)",
   "type": "module",
   "scripts": {
     "build": "anchor build",
@@ -14,7 +14,7 @@
     "cross-chain",
     "solana",
     "anchor",
-    "fogo"
+    "sepolia"
   ],
   "author": "",
   "license": "MIT",

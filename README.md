@@ -59,6 +59,8 @@ Solana Devnet                              Sepolia
 | Solana Devnet | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` |
 | Sepolia | `0x978d3cF51e9358C58a9538933FC3E277C29915C5` |
 
+> **Note:** `declare_id!` in `lib.rs` and `Anchor.toml` use `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk` for local development. The devnet deployment above was done with a different keypair. When deploying your own instance, update `declare_id!` to match your deploy keypair.
+
 ## Key Concepts
 
 ### 1. Cross-VM Peer Registration
