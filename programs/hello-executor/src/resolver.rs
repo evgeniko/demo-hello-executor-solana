@@ -11,6 +11,8 @@ use executor_account_resolver_svm::{
 };
 use solana_program::program::set_return_data;
 
+use wormhole_anchor_sdk::wormhole;
+
 use crate::{
     instructions::ExecuteVaaV1,
     state::{Config, Peer, Received},
@@ -91,8 +93,8 @@ pub fn handle_resolve_raw<'info>(
     // Derive all required PDAs from program ID - executor doesn't pass accounts
     let (config_key, _) = Pubkey::find_program_address(&[Config::SEED_PREFIX], program_id);
     
-    // Wormhole Core Bridge on Solana Devnet
-    let wormhole_program_key = Pubkey::try_from("BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4").unwrap();
+    // Wormhole Core Bridge address (resolved via feature flags: solana-devnet, mainnet, etc.)
+    let wormhole_program_key = wormhole::program::ID;
     let system_program_key = solana_program::system_program::ID;
 
     let result = build_resolver_result(
