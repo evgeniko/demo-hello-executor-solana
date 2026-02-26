@@ -94,16 +94,24 @@ pub fn handler(ctx: Context<RequestRelay>, args: RequestRelayArgs) -> Result<()>
     let seq_data = ctx.accounts.wormhole_sequence.try_borrow_data()?;
     let tracker = u64::from_le_bytes(seq_data[0..8].try_into().unwrap());
     drop(seq_data);
-    require!(tracker > 0, HelloExecutorError::NoMessagesYet);
+
+    // After initialize(), the tracker == 1 because the Alive message consumed sequence 0.
+    // A tracker of 1 means send_greeting has never been called — there are no greetings
+    // to relay. Relaying sequence 0 would send the Alive init message to the EVM side,
+    // which would fail to parse and waste the relay fee.
+    // Valid greeting sequences start at 1, so require tracker > 1 for any relayable greeting.
+    require!(tracker > 1, HelloExecutorError::NoMessagesYet);
 
     // Resolve which VAA to relay.
-    // tracker = "next sequence to be assigned" so valid published sequences are 0..=(tracker-1).
+    // tracker = "next sequence to be assigned" so valid greeting sequences are 1..=(tracker-1).
     let vaa_sequence = match args.sequence {
         Some(seq) => {
-            require!(seq < tracker, HelloExecutorError::NoMessagesYet);
+            // Explicitly requested sequence — must be a valid, already-published greeting.
+            // seq == 0 is the Alive init message, not a greeting; reject it.
+            require!(seq >= 1 && seq < tracker, HelloExecutorError::NoMessagesYet);
             seq
         }
-        None => tracker - 1, // default: most-recently published message
+        None => tracker - 1, // default: most-recently published greeting
     };
 
     let request_bytes = make_vaa_v1_request(
