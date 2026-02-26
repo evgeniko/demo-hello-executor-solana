@@ -104,14 +104,14 @@ pub fn handler(ctx: Context<SendGreeting>, greeting: String) -> Result<()> {
 
     // Read current sequence and compute next (which will be used for the message)
     let seq_data = ctx.accounts.wormhole_sequence.try_borrow_data()?;
-    let current_seq = if seq_data.len() >= 8 {
+    // The sequence tracker stores the NEXT sequence Wormhole will assign.
+    // This is exactly the sequence number the upcoming post_message call will use.
+    let sequence = if seq_data.len() >= 8 {
         u64::from_le_bytes(seq_data[0..8].try_into().unwrap())
     } else {
         0
     };
     drop(seq_data);
-    // Wormhole uses current + 1 for the next message
-    let sequence = current_seq + 1;
 
     let wormhole_emitter = &ctx.accounts.wormhole_emitter;
     let config = &ctx.accounts.config;

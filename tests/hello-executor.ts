@@ -107,7 +107,7 @@ describe('hello-executor', () => {
         expect(instructionNames).to.include('sendGreeting');
         expect(instructionNames).to.include('receiveGreeting');
         expect(instructionNames).to.include('requestRelay');
-        expect(instructionNames).to.include('executeVaaV1');
+        expect(instructionNames).to.include('resolveExecuteVaaV1');
     });
 
     it('Has correct account definitions', () => {

@@ -1,14 +1,18 @@
 #!/usr/bin/env tsx
 /**
  * Send a greeting from Solana Devnet → Sepolia via Wormhole Executor
- * 
+ *
+ * Flow:
+ *   1. send_greeting   — post Wormhole message to Core Bridge
+ *   2. request_relay   — pay the Executor to relay the VAA to Sepolia
+ *
  * Usage:
  *   npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
  */
 
-import { 
-    Connection, 
-    PublicKey, 
+import {
+    Connection,
+    PublicKey,
     SystemProgram,
     SYSVAR_CLOCK_PUBKEY,
     SYSVAR_RENT_PUBKEY,
@@ -46,7 +50,10 @@ function deriveWormholeBridge(wormholeProgram: PublicKey): PublicKey {
 }
 
 function deriveWormholeFeeCollector(wormholeProgram: PublicKey): PublicKey {
-    const [pda] = PublicKey.findProgramAddressSync([Buffer.from('fee_collector')], wormholeProgram);
+    const [pda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('fee_collector')],
+        wormholeProgram
+    );
     return pda;
 }
 
@@ -58,10 +65,23 @@ function deriveWormholeSequence(wormholeProgram: PublicKey, emitter: PublicKey):
     return pda;
 }
 
+function derivePeerPda(programId: PublicKey, chainId: number): PublicKey {
+    const chainBuffer = Buffer.alloc(2);
+    chainBuffer.writeUInt16LE(chainId);
+    const [pda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('peer'), chainBuffer],
+        programId
+    );
+    return pda;
+}
+
 function deriveMessagePda(programId: PublicKey, sequence: bigint): PublicKey {
     const sequenceBuffer = Buffer.alloc(8);
     sequenceBuffer.writeBigUInt64LE(sequence);
-    const [pda] = PublicKey.findProgramAddressSync([Buffer.from('sent'), sequenceBuffer], programId);
+    const [pda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('sent'), sequenceBuffer],
+        programId
+    );
     return pda;
 }
 
@@ -69,26 +89,48 @@ function deriveMessagePda(programId: PublicKey, sequence: bigint): PublicKey {
 // Helpers
 // ============================================================================
 
-function getSendGreetingDiscriminator(): Buffer {
+function getDiscriminator(name: string): Buffer {
     const hash = createHash('sha256');
-    hash.update('global:send_greeting');
+    hash.update(`global:${name}`);
     return Buffer.from(hash.digest().slice(0, 8));
 }
 
-async function getCurrentSequence(connection: Connection, sequencePda: PublicKey): Promise<bigint> {
+/**
+ * Get the current Wormhole sequence from the sequence tracker account.
+ *
+ * The sequence tracker stores the NEXT sequence number Wormhole will use.
+ * After `send_greeting` is called, Wormhole will post a VAA with that sequence
+ * and the tracker increments by 1.
+ *
+ * NOTE: The deployed program currently reads the tracker and adds 1 for the
+ * message PDA derivation (off-by-one). This client mirrors that behavior for
+ * compatibility. Once the program is redeployed with the fix in send_greeting.rs
+ * (which removes the +1), this function should also drop the +1.
+ */
+async function getCurrentSequence(
+    connection: Connection,
+    sequencePda: PublicKey
+): Promise<bigint> {
     const accountInfo = await connection.getAccountInfo(sequencePda);
     if (!accountInfo) return 1n;
+    // Mirrors deployed program: tracker + 1 for message PDA derivation.
+    // The actual VAA sequence = tracker (i.e. this value - 1).
     return BigInt(accountInfo.data.readBigUInt64LE(0)) + 1n;
 }
 
-async function pollForVAA(emitterChain: number, emitterAddress: string, sequence: number): Promise<any> {
+async function pollForVAA(
+    emitterChain: number,
+    emitterAddress: string,
+    sequence: number
+): Promise<any> {
     const baseUrl = 'https://api.testnet.wormholescan.io/api/v1/vaas';
     const paddedEmitter = emitterAddress.padStart(64, '0');
     const url = `${baseUrl}/${emitterChain}/${paddedEmitter}/${sequence}`;
 
-    console.log(`\nPolling for VAA...`);
+    console.log(`\nPolling for VAA (chain=${emitterChain}, seq=${sequence})...`);
 
-    for (let i = 0; i < 36; i++) { // 3 minutes max
+    for (let i = 0; i < 36; i++) {
+        // 3 minutes max
         try {
             const response = await fetch(url);
             if (response.ok) {
@@ -96,7 +138,7 @@ async function pollForVAA(emitterChain: number, emitterAddress: string, sequence
                 if (data.data?.vaa) return data.data;
             }
         } catch {}
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise((r) => setTimeout(r, 5000));
         process.stdout.write('.');
     }
     return null;
@@ -107,7 +149,8 @@ async function pollExecutorStatus(txHash: string): Promise<any> {
 
     console.log(`\nPolling executor status...`);
 
-    for (let i = 0; i < 36; i++) { // 3 minutes max
+    for (let i = 0; i < 36; i++) {
+        // 3 minutes max
         try {
             const response = await fetch(url);
             if (response.ok) {
@@ -120,10 +163,56 @@ async function pollExecutorStatus(txHash: string): Promise<any> {
                 }
             }
         } catch {}
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise((r) => setTimeout(r, 5000));
         process.stdout.write('*');
     }
     return null;
+}
+
+/**
+ * Get a signed quote from the Executor API for Solana → EVM relay.
+ * Returns the signed quote bytes and the estimated cost in lamports.
+ */
+async function getExecutorQuote(
+    dstChain: number,
+    gasLimit: number
+): Promise<{ signedQuoteBytes: Buffer; payee: PublicKey; execAmountLamports: bigint }> {
+    // Relay instructions: version=0x01, gasLimit (uint128 BE), msgValue=0 (uint128 BE)
+    const relayInstructions =
+        '0x01' +
+        BigInt(gasLimit).toString(16).padStart(32, '0') +
+        ''.padStart(32, '0');
+
+    const response = await fetch(`${EXECUTOR_API}/quote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            srcChain: CHAIN_ID_SOLANA,
+            dstChain,
+            relayInstructions,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Executor quote failed: ${await response.text()}`);
+    }
+
+    const data = (await response.json()) as { signedQuote: string; estimatedCost?: string };
+    const hexQuote = data.signedQuote.startsWith('0x')
+        ? data.signedQuote.slice(2)
+        : data.signedQuote;
+    const quoteBytes = Buffer.from(hexQuote, 'hex');
+
+    // EQ01 layout: prefix(4) + quoterAddr(20) + payeeAddr(32) + ...
+    const prefix = quoteBytes.slice(0, 4).toString('ascii');
+    if (prefix !== 'EQ01') throw new Error(`Unknown quote prefix: ${prefix}`);
+
+    const payee = new PublicKey(quoteBytes.slice(24, 56));
+
+    // estimatedCost is in lamports (source chain native units)
+    const execAmountLamports = BigInt(data.estimatedCost || '200000');
+
+    return { signedQuoteBytes: quoteBytes, payee, execAmountLamports };
 }
 
 // ============================================================================
@@ -149,6 +238,7 @@ async function main() {
 
     const programId = config.solana.programId;
     const wormholeProgram = config.solana.wormholeCoreBridge;
+    const executorProgram = config.solana.executorProgram;
 
     // Derive PDAs
     const configPda = deriveConfigPda(programId);
@@ -156,22 +246,25 @@ async function main() {
     const wormholeBridge = deriveWormholeBridge(wormholeProgram);
     const wormholeFeeCollector = deriveWormholeFeeCollector(wormholeProgram);
     const wormholeSequence = deriveWormholeSequence(wormholeProgram, emitterPda);
+    const peerPda = derivePeerPda(programId, CHAIN_ID_SEPOLIA);
 
-    // Get current sequence
+    // Get current sequence — this is the sequence Wormhole will assign to the next message
     const sequence = await getCurrentSequence(connection, wormholeSequence);
     const wormholeMessage = deriveMessagePda(programId, sequence);
 
-    console.log(`\nSequence: ${sequence}`);
+    console.log(`\nSequence (VAA will use): ${sequence}`);
+    console.log(`Emitter PDA: ${emitterPda.toBase58()}`);
 
-    // Build instruction
-    const discriminator = getSendGreetingDiscriminator();
+    // ── Step 1: send_greeting ───────────────────────────────────────────────
+    console.log('\n📤 Step 1: Sending greeting message...');
+
+    const sendDiscriminator = getDiscriminator('send_greeting');
     const greetingBytes = Buffer.from(greeting, 'utf-8');
     const lengthBuffer = Buffer.alloc(4);
     lengthBuffer.writeUInt32LE(greetingBytes.length);
-    
-    const instructionData = Buffer.concat([discriminator, lengthBuffer, greetingBytes]);
+    const sendData = Buffer.concat([sendDiscriminator, lengthBuffer, greetingBytes]);
 
-    const instruction = new TransactionInstruction({
+    const sendInstruction = new TransactionInstruction({
         keys: [
             { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
             { pubkey: configPda, isSigner: false, isWritable: false },
@@ -185,26 +278,100 @@ async function main() {
             { pubkey: SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false },
             { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
         ],
-        programId: programId,
-        data: instructionData,
+        programId,
+        data: sendData,
     });
 
-    // Send
-    console.log('\n📤 Sending transaction...');
-    const signature = await sendAndConfirmTransaction(
+    const sendSig = await sendAndConfirmTransaction(
         connection,
-        new Transaction().add(instruction),
+        new Transaction().add(sendInstruction),
         [keypair],
         { commitment: 'confirmed' }
     );
 
-    console.log(`\n✅ Transaction confirmed!`);
-    console.log(`TX: ${signature}`);
-    console.log(`Explorer: https://explorer.solana.com/tx/${signature}?cluster=devnet`);
+    console.log(`✅ Transaction confirmed!`);
+    console.log(`TX: ${sendSig}`);
+    console.log(
+        `Explorer: https://explorer.solana.com/tx/${sendSig}?cluster=devnet`
+    );
 
-    // Wait for VAA
+    // ── Step 2: request_relay ───────────────────────────────────────────────
+    console.log('\n📡 Step 2: Requesting Executor relay...');
+
+    const GAS_LIMIT = 200000; // EVM gas for receiveWormholeMessages
+    const quote = await getExecutorQuote(CHAIN_ID_SEPOLIA, GAS_LIMIT);
+
+    console.log(`  Payee: ${quote.payee.toBase58()}`);
+    console.log(
+        `  Exec amount: ${quote.execAmountLamports} lamports (${Number(quote.execAmountLamports) / 1e9} SOL)`
+    );
+
+    // Encode relay instructions as bytes
+    const relayInstructionsHex =
+        '01' +
+        BigInt(GAS_LIMIT).toString(16).padStart(32, '0') +
+        ''.padStart(32, '0');
+    const relayInstructionsBytes = Buffer.from(relayInstructionsHex, 'hex');
+
+    // Encode RequestRelayArgs via Borsh:
+    //   dst_chain: u16 LE
+    //   exec_amount: u64 LE
+    //   signed_quote_bytes: Vec<u8> (4-byte LE length prefix + bytes)
+    //   relay_instructions: Vec<u8> (4-byte LE length prefix + bytes)
+    const requestRelayDiscriminator = getDiscriminator('request_relay');
+    const argsBuffer = Buffer.alloc(
+        2 + 8 + 4 + quote.signedQuoteBytes.length + 4 + relayInstructionsBytes.length
+    );
+    let offset = 0;
+    argsBuffer.writeUInt16LE(CHAIN_ID_SEPOLIA, offset);
+    offset += 2;
+    argsBuffer.writeBigUInt64LE(quote.execAmountLamports, offset);
+    offset += 8;
+    argsBuffer.writeUInt32LE(quote.signedQuoteBytes.length, offset);
+    offset += 4;
+    quote.signedQuoteBytes.copy(argsBuffer, offset);
+    offset += quote.signedQuoteBytes.length;
+    argsBuffer.writeUInt32LE(relayInstructionsBytes.length, offset);
+    offset += 4;
+    relayInstructionsBytes.copy(argsBuffer, offset);
+
+    const relayData = Buffer.concat([requestRelayDiscriminator, argsBuffer]);
+
+    const relayInstruction = new TransactionInstruction({
+        keys: [
+            { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
+            { pubkey: quote.payee, isSigner: false, isWritable: true },
+            { pubkey: configPda, isSigner: false, isWritable: false },
+            { pubkey: peerPda, isSigner: false, isWritable: false },
+            { pubkey: emitterPda, isSigner: false, isWritable: false },
+            { pubkey: wormholeProgram, isSigner: false, isWritable: false },
+            { pubkey: wormholeSequence, isSigner: false, isWritable: false },
+            { pubkey: executorProgram, isSigner: false, isWritable: false },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        programId,
+        data: relayData,
+    });
+
+    const relaySig = await sendAndConfirmTransaction(
+        connection,
+        new Transaction().add(relayInstruction),
+        [keypair],
+        { commitment: 'confirmed' }
+    );
+
+    console.log(`✅ Relay request confirmed!`);
+    console.log(`TX: ${relaySig}`);
+    console.log(
+        `Explorer: https://explorer.solana.com/tx/${relaySig}?cluster=devnet`
+    );
+
+    // ── Poll for completion ─────────────────────────────────────────────────
+
+    // The actual VAA sequence = sequence - 1 (Wormhole uses tracker value, not tracker+1)
+    const actualVaaSequence = sequence - 1n;
     const emitterHex = Buffer.from(emitterPda.toBytes()).toString('hex');
-    const vaaData = await pollForVAA(CHAIN_ID_SOLANA, emitterHex, Number(sequence));
+    const vaaData = await pollForVAA(CHAIN_ID_SOLANA, emitterHex, Number(actualVaaSequence));
 
     if (vaaData) {
         console.log('\n\n✅ VAA signed!');
@@ -212,20 +379,28 @@ async function main() {
         console.log('\n\n⚠️  VAA not signed within timeout');
     }
 
-    // Poll executor status
-    const status = await pollExecutorStatus(signature);
+    // Poll executor status for the relay request TX
+    const status = await pollExecutorStatus(relaySig);
 
     if (status?.status === 'completed') {
         console.log('\n\n🎉 SUCCESS! Message delivered to Sepolia!');
         console.log(`Destination TX: ${status.txHash}`);
     } else if (status) {
         console.log(`\n\n⚠️  Executor status: ${status.status}`);
+        if (status.failureCause) console.log(`Cause: ${status.failureCause}`);
     }
 
     console.log('\n' + '─'.repeat(60));
     console.log('Links:');
-    console.log(`  Wormhole: https://testnet.wormholescan.io/#/tx/${signature}`);
-    console.log(`  Executor: https://wormholelabs-xyz.github.io/executor-explorer/#/tx/${signature}?endpoint=https%3A%2F%2Fexecutor-testnet.labsapis.com&env=Testnet`);
+    console.log(
+        `  Send TX:    https://testnet.wormholescan.io/#/tx/${sendSig}`
+    );
+    console.log(
+        `  Relay TX:   https://explorer.solana.com/tx/${relaySig}?cluster=devnet`
+    );
+    console.log(
+        `  Executor:   https://wormholelabs-xyz.github.io/executor-explorer/#/tx/${relaySig}?endpoint=https%3A%2F%2Fexecutor-testnet.labsapis.com&env=Testnet`
+    );
 }
 
 main().catch((error) => {

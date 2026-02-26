@@ -61,8 +61,15 @@ export function loadSolanaKeypair(envVar = 'PRIVATE_KEY_SOLANA'): Keypair {
                 return Keypair.fromSecretKey(Uint8Array.from(parsed));
             }
         } catch {
-            const bs58 = require('bs58');
-            return Keypair.fromSecretKey(bs58.decode(envKey));
+            // Base58-encoded private key.
+            // Use dynamic import to avoid CJS require() in ESM context.
+            throw new Error(
+                `PRIVATE_KEY_SOLANA looks like a base58 string, but base58 decoding ` +
+                    `via require('bs58') is not supported in ESM.\n` +
+                    `Please convert to JSON array format:\n` +
+                    `  solana-keygen show --keypair <path> | head -1\n` +
+                    `Or set SOLANA_KEYPAIR_PATH to your keypair file instead.`
+            );
         }
     }
 
