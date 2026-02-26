@@ -30,6 +30,13 @@ npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
 
 ## Architecture
 
+### Solana → EVM (two transactions required)
+
+> ⚠️ **Important:** Sending from Solana to EVM is a **two-step** process.
+> Both transactions must succeed for the message to arrive.
+> Calling `send_greeting` without `request_relay` publishes to Wormhole but
+> the message is never delivered.
+
 ```
 Solana Devnet                              Sepolia
 ┌────────────────┐                    ┌────────────────┐
@@ -37,45 +44,69 @@ Solana Devnet                              Sepolia
 │    (Anchor)    │                    │  (Solidity)    │
 └───────┬────────┘                    └───────▲────────┘
         │                                     │
-        │ send_greeting()                     │ receiveWormholeMessages()
+        │ TX 1: send_greeting()               │ executeVAAv1()
         ▼                                     │
 ┌────────────────┐                    ┌───────┴────────┐
 │ Wormhole Core  │ ──── Guardians ──▶ │ Wormhole Core  │
 │ (3u8h...)      │     sign VAA       │                │
 └────────────────┘                    └────────────────┘
         │                                     ▲
-        │ request_relay()                     │
+        │ TX 2: request_relay()               │
         ▼                                     │
 ┌────────────────┐                            │
 │   Executor     │ ─────── relay ─────────────┘
-│ (execXUr...)   │
 └────────────────┘
+```
+
+### EVM → Solana (single transaction)
+
+```
+Sepolia                                Solana Devnet
+┌────────────────┐                    ┌────────────────┐
+│ HelloWormhole  │                    │ HelloExecutor  │
+│  (Solidity)    │                    │    (Anchor)    │
+└───────┬────────┘                    └───────▲────────┘
+        │                                     │
+        │ sendGreetingWithMsgValue()           │ receive_greeting()
+        ▼                                     │
+┌────────────────┐     Executor        ┌──────┴─────────┐
+│ Wormhole Core  │ ── posts VAA ──────▶│ Wormhole Core  │
+└────────────────┘                    └────────────────┘
 ```
 
 ## Deployed Contracts
 
 | Chain | Address |
 |-------|---------|
-| Solana Devnet | `5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp` |
-| Sepolia | `0x978d3cF51e9358C58a9538933FC3E277C29915C5` |
-
-> **Note:** `declare_id!` in `lib.rs` and `Anchor.toml` use `J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk` for local development. The devnet deployment above was done with a different keypair. When deploying your own instance, update `declare_id!` to match your deploy keypair.
+| Solana Devnet | `7eiTqf1b1dNwpzn27qEr4eGSWnuon2fJTbnTuWcFifZG` |
+| Sepolia (EVM peer) | `0x15cEeB2C089D19E754463e1697d69Ad11A6e8841` |
 
 ## Key Concepts
 
 ### 1. Cross-VM Peer Registration
 
-For SVM ↔ EVM messaging, peer registration is **asymmetric**:
+For SVM ↔ EVM messaging, peer registration uses **different addresses for different purposes**:
 
-- **Solana side:** Register the EVM contract address (as bytes32, left-padded)
-- **EVM side:** Register the Solana program's **emitter PDA** (not the program ID!)
+| Side | What to register | Used for |
+|------|-----------------|----------|
+| **Solana** | EVM contract address (bytes32, left-padded) | Verify incoming Sepolia VAAs |
+| **EVM** `setPeer` | Solana **program ID** (32 bytes, no padding) | Executor relay routing |
+| **EVM** `setVaaEmitter` | Solana **emitter PDA** (32 bytes) | Verify incoming Solana VAAs |
+
+The split on the EVM side is necessary because the Wormhole Executor uses
+`peers[chainId]` as the destination address to call the resolver program
+(must be executable), while incoming VAAs from Solana carry the emitter PDA
+as their source (a different, non-executable account).
 
 ```typescript
-// Solana emitter PDA derivation
+// Derive both Solana addresses
+const programId = new PublicKey('7eiTqf1b1dNwpzn27qEr4eGSWnuon2fJTbnTuWcFifZG');
 const [emitterPda] = PublicKey.findProgramAddressSync(
     [Buffer.from('emitter')],
     programId
 );
+const programIdBytes32  = '0x' + Buffer.from(programId.toBytes()).toString('hex');
+const emitterPdaBytes32 = '0x' + Buffer.from(emitterPda.toBytes()).toString('hex');
 ```
 
 ### 2. msgValue for SVM Destinations

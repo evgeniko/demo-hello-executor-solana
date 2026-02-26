@@ -315,13 +315,21 @@ async function main() {
     const relayInstructionsBytes = Buffer.from(relayInstructionsHex, 'hex');
 
     // Encode RequestRelayArgs via Borsh:
-    //   dst_chain: u16 LE
-    //   exec_amount: u64 LE
-    //   signed_quote_bytes: Vec<u8> (4-byte LE length prefix + bytes)
-    //   relay_instructions: Vec<u8> (4-byte LE length prefix + bytes)
+    //   dst_chain:             u16 LE
+    //   exec_amount:           u64 LE
+    //   signed_quote_bytes:    Vec<u8>    (4-byte LE length prefix + bytes)
+    //   relay_instructions:    Vec<u8>    (4-byte LE length prefix + bytes)
+    //   sequence:              Option<u64> (0x00 = None, 0x01 + u64 LE = Some(n))
+    //
+    // We pass Some(vaaSequence) to relay exactly the message we just sent,
+    // rather than relying on "latest message" defaulting logic.
+    const sequenceOption = Buffer.alloc(1 + 8);
+    sequenceOption[0] = 0x01; // Some variant
+    sequenceOption.writeBigUInt64LE(vaaSequence, 1);
+
     const requestRelayDiscriminator = getDiscriminator('request_relay');
     const argsBuffer = Buffer.alloc(
-        2 + 8 + 4 + quote.signedQuoteBytes.length + 4 + relayInstructionsBytes.length
+        2 + 8 + 4 + quote.signedQuoteBytes.length + 4 + relayInstructionsBytes.length + sequenceOption.length
     );
     let offset = 0;
     argsBuffer.writeUInt16LE(CHAIN_ID_SEPOLIA, offset);
@@ -335,6 +343,8 @@ async function main() {
     argsBuffer.writeUInt32LE(relayInstructionsBytes.length, offset);
     offset += 4;
     relayInstructionsBytes.copy(argsBuffer, offset);
+    offset += relayInstructionsBytes.length;
+    sequenceOption.copy(argsBuffer, offset);
 
     const relayData = Buffer.concat([requestRelayDiscriminator, argsBuffer]);
 

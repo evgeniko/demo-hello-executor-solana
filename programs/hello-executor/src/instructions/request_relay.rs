@@ -8,16 +8,36 @@ use crate::{
 
 use crate::executor_cpi::{self, ExecutorProgram, RequestForExecutionArgs};
 
+/// Arguments for requesting an Executor relay.
+///
+/// Solana → EVM messaging is a **two-step** process:
+///
+/// ```text
+/// 1. send_greeting  → posts a Wormhole VAA on Solana (sequence N)
+/// 2. request_relay  → pays the Executor to deliver that VAA on the EVM side
+/// ```
+///
+/// Both steps must be called for the message to arrive. If you call `send_greeting`
+/// without `request_relay`, the message is published to Wormhole but never delivered.
+/// Each `send_greeting` call produces one VAA; use `sequence` to relay a specific one
+/// or omit it to relay the most recently published message.
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct RequestRelayArgs {
     /// Wormhole chain ID of the destination chain.
     pub dst_chain: u16,
-    /// Amount to pay the Executor (lamports).
+    /// Amount to pay the Executor (lamports). Get this from the Executor quote API.
     pub exec_amount: u64,
     /// Signed quote bytes from the Executor API.
     pub signed_quote_bytes: Vec<u8>,
-    /// Relay instructions bytes.
+    /// Relay instructions bytes (encodes gas limit + msgValue for the destination).
     pub relay_instructions: Vec<u8>,
+    /// The specific VAA sequence to relay.
+    /// - `None` / omitted → relay the most recently published message (current tracker − 1)
+    /// - `Some(n)`        → relay the message at sequence `n` (useful if you skipped a relay)
+    ///
+    /// Note: the Wormhole sequence tracker stores the NEXT sequence to be assigned,
+    /// so valid sequences are `0 ..= tracker − 1`.
+    pub sequence: Option<u64>,
 }
 
 #[derive(Accounts)]
@@ -69,17 +89,27 @@ pub struct RequestRelay<'info> {
 }
 
 pub fn handler(ctx: Context<RequestRelay>, args: RequestRelayArgs) -> Result<()> {
-    // Read sequence from account data (first 8 bytes)
+    // Read the sequence tracker to validate the requested sequence is in range
+    // and to derive the default (most-recent) sequence when none is specified.
     let seq_data = ctx.accounts.wormhole_sequence.try_borrow_data()?;
-    let sequence = u64::from_le_bytes(seq_data[0..8].try_into().unwrap());
+    let tracker = u64::from_le_bytes(seq_data[0..8].try_into().unwrap());
     drop(seq_data);
-    require!(sequence > 0, HelloExecutorError::NoMessagesYet);
+    require!(tracker > 0, HelloExecutorError::NoMessagesYet);
 
-    // Request relay for the most recent message (sequence - 1 since sequence is next value)
+    // Resolve which VAA to relay.
+    // tracker = "next sequence to be assigned" so valid published sequences are 0..=(tracker-1).
+    let vaa_sequence = match args.sequence {
+        Some(seq) => {
+            require!(seq < tracker, HelloExecutorError::NoMessagesYet);
+            seq
+        }
+        None => tracker - 1, // default: most-recently published message
+    };
+
     let request_bytes = make_vaa_v1_request(
         ctx.accounts.config.chain_id,
         ctx.accounts.wormhole_emitter.key().to_bytes(),
-        sequence - 1,
+        vaa_sequence,
     );
 
     executor_cpi::request_for_execution(

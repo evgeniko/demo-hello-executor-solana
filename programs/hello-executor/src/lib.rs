@@ -60,13 +60,27 @@ pub mod hello_executor {
         instructions::update_config::handler(ctx)
     }
 
-    /// Executor resolver: returns instructions for a VAA execution.
-    /// 
-    /// NOTE: This uses the standard Anchor discriminator. The Executor expects
-    /// discriminator 94b8a9decf089a7f. We handle this via a fallback instruction
-    /// in Anchor that routes to this handler.
-    /// 
-    /// Expected accounts: Config, Wormhole Program, System Program
+    /// Executor VAA resolver — Anchor-callable path (for testing / direct calls).
+    ///
+    /// ## Two resolver paths — read this before calling
+    ///
+    /// The Wormhole Executor calls this program's resolver using its own
+    /// discriminator (`94b8a9decf089a7f`, see `fallback` below), **not** through
+    /// the Anchor-generated discriminator of this instruction.  The two paths
+    /// are functionally equivalent and share the same `build_resolver_result` logic:
+    ///
+    /// | Caller           | Entry point       | Discriminator     | Accounts passed? |
+    /// |------------------|-------------------|-------------------|-----------------|
+    /// | Wormhole Executor | `fallback`        | `94b8a9decf089a7f`| No — derived    |
+    /// | Test / manual     | this instruction  | Anchor-generated  | Yes             |
+    ///
+    /// If you are **integrating with the Executor service**, you do not call this
+    /// instruction directly — the Executor discovers and calls the resolver
+    /// automatically via the fallback handler.
+    ///
+    /// If you are **writing tests** against the resolver, you can call this
+    /// instruction with an `ExecuteVaaV1` context to inspect the returned
+    /// `InstructionGroups` without needing the Executor service.
     pub fn resolve_execute_vaa_v1(
         ctx: Context<ExecuteVaaV1>,
         vaa_body: Vec<u8>,
@@ -74,14 +88,23 @@ pub mod hello_executor {
         resolver::handle_resolve(ctx, vaa_body)
     }
 
-    /// Fallback instruction handler - routes Executor's discriminator to our resolver.
-    /// The Executor uses discriminator [148, 184, 169, 222, 207, 8, 154, 127] (94b8a9decf089a7f).
+    /// Fallback instruction handler — routes the Executor's custom discriminator
+    /// to the VAA resolver.
+    ///
+    /// The Wormhole Executor calls programs using discriminator
+    /// `[148, 184, 169, 222, 207, 8, 154, 127]` (`94b8a9decf089a7f`), which
+    /// does not match Anchor's auto-generated discriminator for any named
+    /// instruction. This fallback intercepts that call, parses the raw VAA bytes
+    /// from the instruction data, derives all required PDAs internally (the
+    /// Executor passes no accounts), and uses `set_return_data` to return the
+    /// `InstructionGroups` telling the Executor which instruction to execute.
     pub fn fallback<'info>(
         program_id: &Pubkey,
         accounts: &'info [AccountInfo<'info>],
         data: &[u8],
     ) -> Result<()> {
-        // Executor resolver discriminator
+        // Wormhole Executor resolver discriminator (sha256("global:resolve_execute_vaa_v1")[..8]
+        // with the Executor SDK's own namespace — NOT the Anchor-generated one).
         const EXECUTOR_DISCRIMINATOR: [u8; 8] = [148, 184, 169, 222, 207, 8, 154, 127];
 
         if data.len() >= 8 && data[..8] == EXECUTOR_DISCRIMINATOR {
