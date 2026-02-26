@@ -96,16 +96,16 @@ function getDiscriminator(name: string): Buffer {
 }
 
 /**
- * Get the current Wormhole sequence from the sequence tracker account.
+ * Get the current Wormhole sequence tracker value.
  *
- * The sequence tracker stores the NEXT sequence number Wormhole will use.
- * After `send_greeting` is called, Wormhole will post a VAA with that sequence
- * and the tracker increments by 1.
+ * The tracker stores the sequence Wormhole will assign to the NEXT post_message
+ * call — i.e. the actual VAA sequence for the upcoming send_greeting call.
  *
- * NOTE: The deployed program currently reads the tracker and adds 1 for the
- * message PDA derivation (off-by-one). This client mirrors that behavior for
- * compatibility. Once the program is redeployed with the fix in send_greeting.rs
- * (which removes the +1), this function should also drop the +1.
+ * The message PDA uses tracker+1 to avoid the init PDA slot; VAA polling uses
+ * the raw tracker value. Both are derived from this return value.
+ *
+ * TODO(redeploy): This matches send_greeting.rs as of the current deployment.
+ * If ever the init sequence convention changes, re-verify against the program.
  */
 async function getCurrentSequence(
     connection: Connection,
@@ -113,9 +113,7 @@ async function getCurrentSequence(
 ): Promise<bigint> {
     const accountInfo = await connection.getAccountInfo(sequencePda);
     if (!accountInfo) return 1n;
-    // Mirrors deployed program: tracker + 1 for message PDA derivation.
-    // The actual VAA sequence = tracker (i.e. this value - 1).
-    return BigInt(accountInfo.data.readBigUInt64LE(0)) + 1n;
+    return BigInt(accountInfo.data.readBigUInt64LE(0));
 }
 
 async function pollForVAA(
@@ -248,11 +246,14 @@ async function main() {
     const wormholeSequence = deriveWormholeSequence(wormholeProgram, emitterPda);
     const peerPda = derivePeerPda(programId, CHAIN_ID_SEPOLIA);
 
-    // Get current sequence — this is the sequence Wormhole will assign to the next message
-    const sequence = await getCurrentSequence(connection, wormholeSequence);
-    const wormholeMessage = deriveMessagePda(programId, sequence);
+    // vaaSequence = actual Wormhole VAA sequence (= tracker value)
+    // pdaSequence = vaaSequence + 1 (to avoid colliding with the init message PDA slot)
+    const vaaSequence = await getCurrentSequence(connection, wormholeSequence);
+    const pdaSequence = vaaSequence + 1n;
+    const wormholeMessage = deriveMessagePda(programId, pdaSequence);
 
-    console.log(`\nSequence (VAA will use): ${sequence}`);
+    console.log(`\nVAA sequence:  ${vaaSequence}`);
+    console.log(`Message PDA slot: ${pdaSequence}`);
     console.log(`Emitter PDA: ${emitterPda.toBase58()}`);
 
     // ── Step 1: send_greeting ───────────────────────────────────────────────
@@ -368,10 +369,8 @@ async function main() {
 
     // ── Poll for completion ─────────────────────────────────────────────────
 
-    // The actual VAA sequence = sequence - 1 (Wormhole uses tracker value, not tracker+1)
-    const actualVaaSequence = sequence - 1n;
     const emitterHex = Buffer.from(emitterPda.toBytes()).toString('hex');
-    const vaaData = await pollForVAA(CHAIN_ID_SOLANA, emitterHex, Number(actualVaaSequence));
+    const vaaData = await pollForVAA(CHAIN_ID_SOLANA, emitterHex, Number(vaaSequence));
 
     if (vaaData) {
         console.log('\n\n✅ VAA signed!');

@@ -102,16 +102,23 @@ pub fn handler(ctx: Context<SendGreeting>, greeting: String) -> Result<()> {
         )?;
     }
 
-    // Read current sequence and compute next (which will be used for the message)
+    // Read the Wormhole sequence tracker.
+    //
+    // The tracker stores the sequence number Wormhole will assign to the NEXT
+    // post_message call — i.e. the actual VAA sequence for THIS message.
+    //
+    // The message PDA uses `vaa_sequence + 1` to avoid colliding with the init
+    // message PDA, which was seeded with `wormhole::INITIAL_SEQUENCE` (= the
+    // tracker value right after initialize()).
     let seq_data = ctx.accounts.wormhole_sequence.try_borrow_data()?;
-    // The sequence tracker stores the NEXT sequence Wormhole will assign.
-    // This is exactly the sequence number the upcoming post_message call will use.
-    let sequence = if seq_data.len() >= 8 {
+    let vaa_sequence = if seq_data.len() >= 8 {
         u64::from_le_bytes(seq_data[0..8].try_into().unwrap())
     } else {
         0
     };
     drop(seq_data);
+    // PDA slot = vaa_sequence + 1 (avoids the init-time PDA at slot vaa_sequence)
+    let pda_sequence = vaa_sequence + 1;
 
     let wormhole_emitter = &ctx.accounts.wormhole_emitter;
     let config = &ctx.accounts.config;
@@ -148,10 +155,10 @@ pub fn handler(ctx: Context<SendGreeting>, greeting: String) -> Result<()> {
         data: ix_data,
     };
 
-    // Derive the message PDA bump
-    let seq_buf = sequence.to_le_bytes();
+    // Derive the message PDA bump using pda_sequence
+    let pda_seq_buf = pda_sequence.to_le_bytes();
     let (_, message_bump) = Pubkey::find_program_address(
-        &[SEED_PREFIX_SENT, &seq_buf],
+        &[SEED_PREFIX_SENT, &pda_seq_buf],
         ctx.program_id,
     );
 
@@ -159,20 +166,20 @@ pub fn handler(ctx: Context<SendGreeting>, greeting: String) -> Result<()> {
         &ix,
         &ctx.accounts.to_account_infos(),
         &[
-            &[SEED_PREFIX_SENT, &seq_buf, &[message_bump]],
+            &[SEED_PREFIX_SENT, &pda_seq_buf, &[message_bump]],
             &[WormholeEmitter::SEED_PREFIX, &[wormhole_emitter.bump]],
         ],
     )?;
 
-    // Emit event
+    // Emit event with the ACTUAL VAA sequence (what the relay/explorer will see)
     let clock = &ctx.accounts.clock;
     emit!(GreetingSent {
         greeting,
-        sequence,
+        sequence: vaa_sequence,
         timestamp: clock.unix_timestamp,
     });
 
-    msg!("Greeting sent! Sequence: {}", sequence);
+    msg!("Greeting sent! VAA sequence: {}", vaa_sequence);
 
     Ok(())
 }

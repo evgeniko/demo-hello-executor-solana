@@ -13,7 +13,10 @@ pub mod message;
 pub mod resolver;
 pub mod state;
 
-declare_id!("J27c2HY6VdpbKFusXVEGCN61chVfrHhHBAH6MXdJcSnk");
+// TODO(redeploy): Update this ID when redeploying with a new keypair.
+// Run: solana-keygen pubkey target/deploy/hello_executor-keypair.json
+// Then update this value AND [programs.devnet] in Anchor.toml to match.
+declare_id!("7eiTqf1b1dNwpzn27qEr4eGSWnuon2fJTbnTuWcFifZG");
 
 #[program]
 /// # Hello Executor

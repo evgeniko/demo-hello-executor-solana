@@ -21,12 +21,15 @@ export const CHAIN_ID_SEPOLIA = 10002;
 // ============================================================================
 
 // Solana Devnet - HelloExecutor program
-export const HELLO_EXECUTOR_SOLANA = process.env.HELLO_EXECUTOR_SOLANA || 
-    '5qAHNEvdL7gAj49q4jm1718h6tCGX5q8KBurM9iiQ4Rp';
+// TODO(redeploy): Update this default after deploying a new program binary.
+// Run: solana-keygen pubkey target/deploy/hello_executor-keypair.json
+export const HELLO_EXECUTOR_SOLANA = process.env.HELLO_EXECUTOR_SOLANA ||
+    '7eiTqf1b1dNwpzn27qEr4eGSWnuon2fJTbnTuWcFifZG';
 
 // Sepolia - HelloWormhole contract (with cross-VM support)
-export const HELLO_WORMHOLE_SEPOLIA = process.env.HELLO_WORMHOLE_SEPOLIA || 
-    '0x978d3cF51e9358C58a9538933FC3E277C29915C5';
+// TODO(redeploy): Update this default if deploying a new EVM contract.
+export const HELLO_WORMHOLE_SEPOLIA = process.env.HELLO_WORMHOLE_SEPOLIA ||
+    '0x15cEeB2C089D19E754463e1697d69Ad11A6e8841';
 
 // Wormhole infrastructure
 export const WORMHOLE_CORE_BRIDGE_SOLANA = '3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5';

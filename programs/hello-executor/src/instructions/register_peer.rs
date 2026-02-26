@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use wormhole_anchor_sdk::wormhole;
 
 use crate::{
     error::HelloExecutorError,
