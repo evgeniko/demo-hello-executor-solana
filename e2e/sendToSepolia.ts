@@ -29,6 +29,7 @@ import {
     CHAIN_ID_SEPOLIA,
     EXECUTOR_API,
 } from './config.js';
+import { createRelayInstructions } from './relay.js';
 
 // ============================================================================
 // PDA Derivations
@@ -194,11 +195,8 @@ async function getExecutorQuote(
     dstChain: number,
     gasLimit: number
 ): Promise<{ signedQuoteBytes: Buffer; payee: PublicKey; execAmountLamports: bigint }> {
-    // Relay instructions: version=0x01, gasLimit (uint128 BE), msgValue=0 (uint128 BE)
-    const relayInstructions =
-        '0x01' +
-        BigInt(gasLimit).toString(16).padStart(32, '0') +
-        ''.padStart(32, '0');
+    // Relay instructions: 0x01 | uint128 gasLimit | uint128 msgValue=0
+    const relayInstructions = createRelayInstructions(BigInt(gasLimit), 0n);
 
     const response = await fetch(`${EXECUTOR_API}/quote`, {
         method: 'POST',
@@ -326,12 +324,11 @@ async function main() {
         `  Exec amount: ${quote.execAmountLamports} lamports (${Number(quote.execAmountLamports) / 1e9} SOL)`
     );
 
-    // Encode relay instructions as bytes
-    const relayInstructionsHex =
-        '01' +
-        BigInt(GAS_LIMIT).toString(16).padStart(32, '0') +
-        ''.padStart(32, '0');
-    const relayInstructionsBytes = Buffer.from(relayInstructionsHex, 'hex');
+    // Encode relay instructions as bytes (same value as used in getExecutorQuote above)
+    const relayInstructionsBytes = Buffer.from(
+        createRelayInstructions(BigInt(GAS_LIMIT), 0n).slice(2), // strip '0x'
+        'hex'
+    );
 
     // Encode RequestRelayArgs via Borsh:
     //   dst_chain:             u16 LE
