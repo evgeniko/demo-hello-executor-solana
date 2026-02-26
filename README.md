@@ -19,14 +19,17 @@ npm install
 cp e2e/.env.example e2e/.env
 # Edit .env with your private keys
 
-# Register peers (run once, both directions)
+# (Fresh deployment only) Initialize program + register Sepolia peer on Solana:
+npx tsx e2e/initialize.ts
+
+# Register peers in both directions (Solana registers EVM, EVM registers Solana)
 npx tsx e2e/setupPeers.ts
 
 # Send from Solana to Sepolia
 npx tsx e2e/sendToSepolia.ts "Hello from Solana!"
 ```
 
-> For Sepolia → Solana, see the [EVM demo repo](https://github.com/wormhole-foundation/demo-hello-executor/pull/2).
+> For Sepolia → Solana, see the [EVM demo repo](https://github.com/evgeniko/demo-hello-executor/tree/feat/cross-vm-solana).
 
 ## Architecture
 
@@ -158,9 +161,16 @@ PRIVATE_KEY_SOLANA=[1,2,3,...]
 PRIVATE_KEY_SEPOLIA=0x...
 ```
 
+## Important Limits
+
+| Constraint | Value | Notes |
+|-----------|-------|-------|
+| Max message length (Solana receiver) | **512 bytes** | Enforced by `receive_greeting.rs` (`GREETING_MAX_LENGTH`). EVM contracts have no such limit — oversized messages sent from EVM will fail on Solana with `InvalidMessage`. |
+| Max message length (EVM receiver) | No limit in demo | Standard EVM gas limits apply. |
+
 ## Related
 
-- **EVM Contract:** [wormhole-foundation/demo-hello-executor#2](https://github.com/wormhole-foundation/demo-hello-executor/pull/2)
+- **EVM Contract:** [evgeniko/demo-hello-executor](https://github.com/evgeniko/demo-hello-executor/tree/feat/cross-vm-solana)
 - **Wormhole Docs:** [docs.wormhole.com](https://docs.wormhole.com)
 - **Executor Explorer:** [wormholelabs-xyz.github.io/executor-explorer](https://wormholelabs-xyz.github.io/executor-explorer)
 
