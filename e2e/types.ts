@@ -25,8 +25,14 @@ export interface ExecutorQuote {
 }
 
 export interface ExecutorStatus {
-    status: 'pending' | 'submitted' | 'completed' | 'aborted' | 'underpaid';
-    txHash?: string;
+    // Executor API status values:
+    //   'pending'    — waiting for VAA / being processed
+    //   'submitted'  — relay TX included on destination chain (SUCCESS state)
+    //                  txs[] is populated with destination TX hashes
+    //   'error'      — relay failed (execution reverted, etc.)
+    //   'underpaid'  — insufficient payment to Executor
+    // Note: 'completed' is NOT a real status — use 'submitted' + txs.length > 0
+    status: 'pending' | 'submitted' | 'error' | 'underpaid';
     failureCause?: string;
-    txs?: Array<{ txHash: string }>;
+    txs?: Array<{ txHash: string; chainId?: number; blockNumber?: string }>;
 }

@@ -11,8 +11,10 @@ const __dirname = path.dirname(__filename);
 const idlPath = path.join(__dirname, '..', 'target', 'idl', 'hello_executor.json');
 const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
 
-// Program ID from Anchor.toml
-const PROGRAM_ID = new PublicKey('He11oExec1111111111111111111111111111111111');
+// Program ID matches [programs.localnet] in Anchor.toml.
+// These tests are structural (IDL + PDA derivation only) — they do NOT make
+// on-chain transactions, so they work against both localnet and devnet.
+const PROGRAM_ID = new PublicKey('7eiTqf1b1dNwpzn27qEr4eGSWnuon2fJTbnTuWcFifZG');
 
 // Wormhole Core Bridge on devnet
 const WORMHOLE_PROGRAM = new PublicKey('3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5');
