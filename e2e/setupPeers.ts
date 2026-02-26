@@ -132,13 +132,27 @@ async function registerEvmPeerOnSolana(): Promise<boolean> {
 // EVM Side - Register Solana peer
 // ============================================================================
 
+// EVM ↔ Solana peer registration requires TWO separate transactions:
+//
+//   1. setPeer(Solana, programId)
+//      The Executor uses peers[chainId] as the routing address (dstAddr) when
+//      building relay requests. It must point to an EXECUTABLE Solana account
+//      — the program ID. Using the emitter PDA here causes InvalidProgramForExecution.
+//
+//   2. setVaaEmitter(Solana, emitterPda)
+//      Incoming VAAs from Solana carry the Wormhole emitter PDA as their source
+//      address (not the program ID). _checkPeer compares against vaaEmitters[chainId]
+//      when set, so this must be registered separately.
+
 const HELLO_WORMHOLE_ABI = [
     'function setPeer(uint16 chainId, bytes32 peerAddress) external',
+    'function setVaaEmitter(uint16 chainId, bytes32 emitterAddress) external',
     'function peers(uint16 chainId) external view returns (bytes32)',
+    'function vaaEmitters(uint16 chainId) external view returns (bytes32)',
 ];
 
 async function registerSolanaPeerOnEvm(): Promise<boolean> {
-    console.log('\n📋 EVM: Registering Solana peer...\n');
+    console.log('\n📋 EVM: Registering Solana peer (two-step)...\n');
 
     const wallet = loadEvmWallet();
     console.log(`  Wallet: ${wallet.address}`);
@@ -148,37 +162,53 @@ async function registerSolanaPeerOnEvm(): Promise<boolean> {
 
     const contract = new ethers.Contract(HELLO_WORMHOLE_SEPOLIA, HELLO_WORMHOLE_ABI, wallet);
 
-    // IMPORTANT: Register the emitter PDA, NOT the program ID!
     const programId = new PublicKey(HELLO_EXECUTOR_SOLANA);
     const emitterPda = deriveEmitterPda(programId);
-    const emitterBytes32 = '0x' + Buffer.from(emitterPda.toBytes()).toString('hex');
+    const programIdBytes32  = '0x' + Buffer.from(programId.toBytes()).toString('hex');
+    const emitterPdaBytes32 = '0x' + Buffer.from(emitterPda.toBytes()).toString('hex');
 
-    console.log(`\n  Registering:`);
-    console.log(`    Chain ID: ${CHAIN_ID_SOLANA} (Solana)`);
-    console.log(`    Program ID: ${programId.toBase58()}`);
-    console.log(`    Emitter PDA: ${emitterPda.toBase58()}`);
-    console.log(`    As bytes32: ${emitterBytes32}`);
+    console.log(`  Chain ID:     ${CHAIN_ID_SOLANA} (Solana)`);
+    console.log(`  Program ID:   ${programId.toBase58()}`);
+    console.log(`  Emitter PDA:  ${emitterPda.toBase58()}`);
 
-    // Check if already registered
+    // ── Step 1: setPeer → program ID (executor routing) ──────────────────
     const existingPeer = await contract.peers(CHAIN_ID_SOLANA);
-    if (existingPeer === emitterBytes32) {
-        console.log('\n  ⚠️  Peer already registered correctly');
-        return true;
+    if (existingPeer.toLowerCase() === programIdBytes32.toLowerCase()) {
+        console.log('\n  ⚠️  peers[Solana] already set to program ID — skipping');
+    } else {
+        try {
+            console.log(`\n  Setting peers[Solana] = program ID...`);
+            const tx = await contract.setPeer(CHAIN_ID_SOLANA, programIdBytes32);
+            console.log(`  TX: ${tx.hash}`);
+            await tx.wait();
+            console.log(`  ✅ setPeer confirmed`);
+        } catch (error: any) {
+            console.error('\n  ❌ setPeer failed:', error.message);
+            return false;
+        }
     }
 
-    try {
-        const tx = await contract.setPeer(CHAIN_ID_SOLANA, emitterBytes32);
-        console.log(`\n  TX Hash: ${tx.hash}`);
-        console.log(`  Waiting for confirmation...`);
-        
-        await tx.wait();
-        console.log(`  ✅ Success!`);
-        console.log(`  Explorer: https://sepolia.etherscan.io/tx/${tx.hash}`);
-        return true;
-    } catch (error: any) {
-        console.error('\n  ❌ Error:', error.message);
-        return false;
+    // ── Step 2: setVaaEmitter → emitter PDA (VAA verification) ───────────
+    const existingEmitter = await contract.vaaEmitters(CHAIN_ID_SOLANA);
+    if (existingEmitter.toLowerCase() === emitterPdaBytes32.toLowerCase()) {
+        console.log('  ⚠️  vaaEmitters[Solana] already set to emitter PDA — skipping');
+    } else {
+        try {
+            console.log(`\n  Setting vaaEmitters[Solana] = emitter PDA...`);
+            const tx = await contract.setVaaEmitter(CHAIN_ID_SOLANA, emitterPdaBytes32);
+            console.log(`  TX: ${tx.hash}`);
+            await tx.wait();
+            console.log(`  ✅ setVaaEmitter confirmed`);
+        } catch (error: any) {
+            console.error('\n  ❌ setVaaEmitter failed:', error.message);
+            return false;
+        }
     }
+
+    console.log(`\n  ✅ Solana peer registered on EVM:`);
+    console.log(`     peers[1]       = program ID  (executor routing)`);
+    console.log(`     vaaEmitters[1] = emitter PDA (VAA verification)`);
+    return true;
 }
 
 // ============================================================================
