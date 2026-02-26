@@ -142,27 +142,46 @@ async function pollForVAA(
     return null;
 }
 
+/**
+ * Poll the Executor API for relay status on a Solana-source transaction.
+ *
+ * The Executor API uses POST (not GET) for status queries.
+ * The terminal statuses for a Solana→EVM relay are:
+ *   - "submitted": relay TX has been included in a block on the destination chain.
+ *                  The `txs` array contains the destination TX hash(es).
+ *                  This is the success state.
+ *   - "error":     relay failed (e.g. execution reverted on destination).
+ *   - "underpaid": insufficient payment to the Executor.
+ * Non-terminal: "pending" (waiting for VAA), "processing" (in flight).
+ */
 async function pollExecutorStatus(txHash: string): Promise<any> {
-    const url = `${EXECUTOR_API}/status/tx?srcChain=Solana&txHash=${txHash}&env=Testnet`;
-
     console.log(`\nPolling executor status...`);
 
     for (let i = 0; i < 36; i++) {
         // 3 minutes max
         try {
-            const response = await fetch(url);
+            const response = await fetch(`${EXECUTOR_API}/status/tx`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chainId: CHAIN_ID_SOLANA, txHash }),
+            });
             if (response.ok) {
                 const data: any = await response.json();
                 if (Array.isArray(data) && data.length > 0) {
-                    const status = data[0].status;
-                    if (['completed', 'error', 'underpaid'].includes(status)) {
-                        return data[0];
+                    const item = data[0];
+                    const status = item.status;
+                    // "submitted" = delivered; txs[] contains destination TX(es)
+                    if (status === 'submitted' && item.txs?.length > 0) {
+                        return item;
+                    }
+                    if (['error', 'underpaid'].includes(status)) {
+                        return item;
                     }
                 }
             }
         } catch {}
         await new Promise((r) => setTimeout(r, 5000));
-        process.stdout.write('*');
+        process.stdout.write('.');
     }
     return null;
 }
@@ -388,15 +407,23 @@ async function main() {
         console.log('\n\n⚠️  VAA not signed within timeout');
     }
 
-    // Poll executor status for the relay request TX
-    const status = await pollExecutorStatus(relaySig);
+    // Poll executor status for the relay request TX.
+    // "submitted" (with txs[]) = delivered to Sepolia; "error"/"underpaid" = failure.
+    const relayResult = await pollExecutorStatus(relaySig);
 
-    if (status?.status === 'completed') {
+    if (relayResult?.status === 'submitted' && relayResult.txs?.length > 0) {
+        const destTx = relayResult.txs[0];
         console.log('\n\n🎉 SUCCESS! Message delivered to Sepolia!');
-        console.log(`Destination TX: ${status.txHash}`);
-    } else if (status) {
-        console.log(`\n\n⚠️  Executor status: ${status.status}`);
-        if (status.failureCause) console.log(`Cause: ${status.failureCause}`);
+        console.log(`   Destination TX:    ${destTx.txHash}`);
+        console.log(`   Block:             ${destTx.blockNumber}`);
+        console.log(`   Etherscan:         https://sepolia.etherscan.io/tx/${destTx.txHash}`);
+    } else if (relayResult?.status === 'error') {
+        console.log(`\n\n❌ Relay failed: ${relayResult.failureCause || 'unknown error'}`);
+    } else if (relayResult?.status === 'underpaid') {
+        console.log(`\n\n❌ Relay underpaid. Try increasing execAmount in getExecutorQuote()`);
+    } else {
+        console.log('\n\n⚠️  Executor delivery not confirmed within timeout.');
+        console.log('    The relay may still be in flight — check the Executor Explorer link below.');
     }
 
     console.log('\n' + '─'.repeat(60));
