@@ -141,10 +141,12 @@ async function main() {
 
     console.log('═'.repeat(60));
     console.log('✅ Solana side ready!\n');
-    console.log('Next: register Solana emitter PDA on EVM side:');
+    console.log('Next: register Solana peer on EVM side (two addresses required):');
     console.log(`\n  npx tsx e2e/setupPeers.ts evm\n`);
-    console.log('Or via Forge:');
+    console.log('Or via Forge (registers both program ID and emitter PDA):');
+    const programIdBytes32 = '0x' + Buffer.from(programId.toBytes()).toString('hex');
     console.log(`  HELLO_WORMHOLE_SEPOLIA_CROSSVM=<contract> \\`);
+    console.log(`  SOLANA_PROGRAM_ID_BYTES32=${programIdBytes32} \\`);
     console.log(`  SOLANA_EMITTER_PDA_BYTES32=${emitterBytes32} \\`);
     console.log(`  forge script script/SetupSolanaPeer.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast`);
     console.log('═'.repeat(60));
