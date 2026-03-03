@@ -1,8 +1,6 @@
 #[allow(ambiguous_glob_reexports)]
 pub use initialize::*;
 #[allow(ambiguous_glob_reexports)]
-pub use execute_vaa_v1::*;
-#[allow(ambiguous_glob_reexports)]
 pub use receive_greeting::*;
 #[allow(ambiguous_glob_reexports)]
 pub use register_peer::*;
@@ -13,7 +11,6 @@ pub use send_greeting::*;
 #[allow(ambiguous_glob_reexports)]
 pub use update_config::*;
 
-pub mod execute_vaa_v1;
 pub mod initialize;
 pub mod receive_greeting;
 pub mod register_peer;

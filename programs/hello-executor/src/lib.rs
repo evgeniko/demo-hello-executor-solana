@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 pub use error::*;
 pub use instructions::*;
 pub use message::*;
+pub use resolver::*;
 pub use state::*;
 
 pub mod error;

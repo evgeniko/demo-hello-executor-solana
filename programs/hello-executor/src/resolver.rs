@@ -13,10 +13,15 @@ use solana_program::program::set_return_data;
 
 use wormhole_anchor_sdk::wormhole;
 
-use crate::{
-    instructions::ExecuteVaaV1,
-    state::{Config, Peer, Received},
-};
+use crate::state::{Config, Peer, Received};
+
+#[derive(Accounts)]
+pub struct ExecuteVaaV1<'info> {
+    #[account(seeds = [Config::SEED_PREFIX], bump)]
+    pub config: Account<'info, Config>,
+    pub wormhole_program: Program<'info, wormhole::program::Wormhole>,
+    pub system_program: Program<'info, System>,
+}
 
 // Re-export types for lib.rs
 pub use executor_account_resolver_svm::{InstructionGroups as ResolverInstructionGroups, Resolver as ResolverType};
@@ -49,7 +54,7 @@ fn parse_vaa_body(vaa_body: &[u8]) -> Result<(u16, [u8; 32], u64)> {
 }
 
 /// Handle resolver call via Anchor Context.
-pub fn handle_resolve(
+pub(crate) fn handle_resolve(
     ctx: Context<ExecuteVaaV1>,
     vaa_body: Vec<u8>,
 ) -> Result<Resolver<InstructionGroups>> {
@@ -71,7 +76,7 @@ pub fn handle_resolve(
 
 /// Handle resolver call via raw accounts (for fallback).
 /// The executor calls this with minimal/no accounts - we derive everything from program ID.
-pub fn handle_resolve_raw<'info>(
+pub(crate) fn handle_resolve_raw<'info>(
     program_id: &Pubkey,
     _accounts: &'info [AccountInfo<'info>],
     data: &[u8],
