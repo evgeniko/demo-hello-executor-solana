@@ -4,7 +4,7 @@
  * 
  * This script registers peers in both directions:
  * 1. Solana → registers EVM contract address as peer
- * 2. EVM → registers Solana emitter PDA as peer (NOT the program ID!)
+ * 2. EVM → two-step: setPeer(programId) for routing + setVaaEmitter(emitterPDA) for VAA verification
  * 
  * Usage:
  *   npx tsx e2e/setupPeers.ts          # Both directions

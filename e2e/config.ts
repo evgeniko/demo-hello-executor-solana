@@ -127,8 +127,10 @@ export function solanaAddressToBytes32(pubkey: PublicKey): Uint8Array {
 }
 
 /**
- * Derive the emitter PDA for a Solana program
- * EVM contracts should register this PDA as the peer, not the program ID!
+ * Derive the emitter PDA for a Solana program.
+ * On the EVM side, register two separate addresses:
+ *   setPeer(programId)        — executor routing (must be executable)
+ *   setVaaEmitter(emitterPDA) — VAA verification (what Wormhole stamps as source)
  */
 export function deriveEmitterPda(programId: PublicKey): PublicKey {
     const [emitterPda] = PublicKey.findProgramAddressSync(
