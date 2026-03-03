@@ -2,7 +2,6 @@ use anchor_lang::prelude::*;
 
 use crate::{
     error::HelloExecutorError,
-    executor_requests::make_vaa_v1_request,
     state::{Config, Peer, WormholeEmitter},
 };
 
@@ -111,11 +110,12 @@ pub fn handler(ctx: Context<RequestRelay>, args: RequestRelayArgs) -> Result<()>
         None => tracker - 1, // default: most-recently published greeting
     };
 
-    let request_bytes = make_vaa_v1_request(
-        ctx.accounts.config.chain_id,
-        ctx.accounts.wormhole_emitter.key().to_bytes(),
-        vaa_sequence,
-    );
+    // ERV1 payload: 4-byte type tag | u16 chain (BE) | 32-byte emitter | u64 sequence (BE)
+    let mut request_bytes = Vec::with_capacity(4 + 2 + 32 + 8);
+    request_bytes.extend_from_slice(b"ERV1");
+    request_bytes.extend_from_slice(&ctx.accounts.config.chain_id.to_be_bytes());
+    request_bytes.extend_from_slice(&ctx.accounts.wormhole_emitter.key().to_bytes());
+    request_bytes.extend_from_slice(&vaa_sequence.to_be_bytes());
 
     executor_cpi::request_for_execution(
         &ctx.accounts.executor_program.to_account_info(),

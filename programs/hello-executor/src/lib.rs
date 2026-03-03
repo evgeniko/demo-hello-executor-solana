@@ -7,7 +7,6 @@ pub use state::*;
 
 pub mod error;
 pub mod executor_cpi;
-pub mod executor_requests;
 pub mod instructions;
 pub mod message;
 pub mod resolver;
