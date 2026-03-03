@@ -12,11 +12,10 @@ const PAYLOAD_ID_ALIVE: u8 = 0;
 /// format — `0x01 | u16_be_len | message_bytes` — so receivers can distinguish
 /// Alive (init) from Hello (greeting) payloads without ambiguity.
 ///
-/// **EVM side does NOT strip this prefix.**
-/// EVM receivers (`HelloWormhole.sol`) treat the entire VAA payload as raw bytes.
-/// When a message travels Solana → EVM, the EVM contract stores and emits
-/// `0x01 | len | text`, not just `text`. This is acceptable for a demo;
-/// a production integration would strip the prefix in the EVM receiver.
+/// **EVM side strips this prefix.**
+/// `HelloWormhole.sol#_executeVaa` detects `peerChain == CHAIN_ID_SOLANA` and
+/// strips the 3-byte header before emitting `GreetingReceived`, so the event
+/// contains the clean message string.
 const PAYLOAD_ID_HELLO: u8 = 1;
 
 /// Maximum length of a greeting message in bytes
