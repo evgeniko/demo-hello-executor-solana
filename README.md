@@ -1,13 +1,6 @@
 # Cross-VM Hello World with Wormhole Executor
 
-Cross-chain messaging demo using Wormhole Executor for automatic relay between **Solana ↔ EVM** (Sepolia).
-
-## Status
-
-| Route | Status |
-|-------|--------|
-| Solana → Sepolia | ✅ Working |
-| Sepolia → Solana | ✅ Working |
+Cross-chain messaging demo using Wormhole Executor for automatic relay between **Solana ↔ EVM**.
 
 ## Quick Start
 
