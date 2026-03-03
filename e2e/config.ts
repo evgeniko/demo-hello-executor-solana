@@ -12,6 +12,7 @@ dotenv.config();
 
 // ============================================================================
 // Wormhole Chain IDs
+// Full reference: https://wormhole.com/docs/products/reference/chain-ids/
 // ============================================================================
 export const CHAIN_ID_SOLANA = 1;
 export const CHAIN_ID_SEPOLIA = 10002;

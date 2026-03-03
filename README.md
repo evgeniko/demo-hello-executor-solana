@@ -106,17 +106,6 @@ When sending **TO** Solana/SVM chains, include `msgValue` for rent and fees:
 const SOLANA_MSG_VALUE_LAMPORTS = 15_000_000n; // ~0.015 SOL
 ```
 
-### 3. Wormhole Chain IDs
-
-These are permanent Wormhole protocol identifiers — they never change regardless of deployment.
-Full reference: [wormhole.com/docs/products/reference/chain-ids](https://wormhole.com/docs/products/reference/chain-ids/)
-
-| Chain | ID |
-|-------|-----|
-| Solana | 1 |
-| Sepolia | 10002 |
-| Ethereum mainnet | 2 |
-
 ## Project Structure
 
 ```
