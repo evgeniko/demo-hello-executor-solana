@@ -89,7 +89,7 @@ pub struct Initialize<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<Initialize>, chain_id: u16) -> Result<()> {
+pub(crate) fn handler(ctx: Context<Initialize>, chain_id: u16) -> Result<()> {
     let config = &mut ctx.accounts.config;
 
     // Set the owner

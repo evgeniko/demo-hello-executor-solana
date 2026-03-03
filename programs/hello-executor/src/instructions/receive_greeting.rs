@@ -117,7 +117,7 @@ pub struct GreetingReceived {
 /// Payload ID for Hello message (from Solana senders)
 const PAYLOAD_ID_HELLO: u8 = 1;
 
-pub fn handler(ctx: Context<ReceiveGreeting>, vaa_hash: [u8; 32]) -> Result<()> {
+pub(crate) fn handler(ctx: Context<ReceiveGreeting>, vaa_hash: [u8; 32]) -> Result<()> {
     let posted = &ctx.accounts.posted;
     let payload = &posted.data().0;
 

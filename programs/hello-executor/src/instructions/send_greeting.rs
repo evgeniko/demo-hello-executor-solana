@@ -75,7 +75,7 @@ pub struct GreetingSent {
     pub timestamp: i64,
 }
 
-pub fn handler(ctx: Context<SendGreeting>, greeting: String) -> Result<()> {
+pub(crate) fn handler(ctx: Context<SendGreeting>, greeting: String) -> Result<()> {
     // Validate message length
     require!(
         greeting.len() <= GREETING_MAX_LENGTH,

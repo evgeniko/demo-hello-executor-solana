@@ -27,7 +27,7 @@ pub struct UpdateWormholeConfig<'info> {
     pub wormhole_fee_collector: UncheckedAccount<'info>,
 }
 
-pub fn handler(ctx: Context<UpdateWormholeConfig>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<UpdateWormholeConfig>) -> Result<()> {
     let wormhole_program = ctx.accounts.wormhole_program.key();
     
     // Verify bridge PDA

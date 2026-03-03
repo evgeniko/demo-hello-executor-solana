@@ -38,7 +38,7 @@ pub struct RegisterPeer<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<RegisterPeer>, chain: u16, address: [u8; 32]) -> Result<()> {
+pub(crate) fn handler(ctx: Context<RegisterPeer>, chain: u16, address: [u8; 32]) -> Result<()> {
     // Validate the peer:
     // - Cannot be own chain ID (prevents self-registration)
     // - Cannot be zero address

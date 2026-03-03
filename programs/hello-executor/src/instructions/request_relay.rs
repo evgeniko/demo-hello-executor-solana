@@ -84,7 +84,7 @@ pub struct RequestRelay<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<RequestRelay>, args: RequestRelayArgs) -> Result<()> {
+pub(crate) fn handler(ctx: Context<RequestRelay>, args: RequestRelayArgs) -> Result<()> {
     // Read the sequence tracker to validate the requested sequence is in range
     // and to derive the default (most-recent) sequence when none is specified.
     let seq_data = ctx.accounts.wormhole_sequence.try_borrow_data()?;
