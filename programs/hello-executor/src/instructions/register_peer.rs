@@ -21,6 +21,10 @@ pub struct RegisterPeer<'info> {
     pub config: Account<'info, Config>,
 
     #[account(
+        // init_if_needed is intentional: allows the owner to update peer addresses
+        // (e.g. after a contract upgrade on the remote chain). Safe here because
+        // the has_one = owner constraint prevents anyone other than the program
+        // owner from calling this instruction, making reinitialization attacks impossible.
         init_if_needed,
         payer = owner,
         seeds = [Peer::SEED_PREFIX, &chain.to_le_bytes()[..]],

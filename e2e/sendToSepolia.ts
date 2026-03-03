@@ -371,7 +371,6 @@ async function main() {
             { pubkey: configPda, isSigner: false, isWritable: false },
             { pubkey: peerPda, isSigner: false, isWritable: false },
             { pubkey: emitterPda, isSigner: false, isWritable: false },
-            { pubkey: wormholeProgram, isSigner: false, isWritable: false },
             { pubkey: wormholeSequence, isSigner: false, isWritable: false },
             { pubkey: executorProgram, isSigner: false, isWritable: false },
             { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },

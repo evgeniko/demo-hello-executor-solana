@@ -72,9 +72,6 @@ pub struct RequestRelay<'info> {
     /// Program's Wormhole emitter account.
     pub wormhole_emitter: Account<'info, WormholeEmitter>,
 
-    /// CHECK: Wormhole Core Bridge program (different on each chain).
-    pub wormhole_program: UncheckedAccount<'info>,
-
     /// CHECK: Wormhole sequence - verified via config address
     #[account(
         address = config.wormhole.sequence @ HelloExecutorError::InvalidWormholeSequence,
