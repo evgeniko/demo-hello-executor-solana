@@ -104,8 +104,12 @@ pub mod hello_executor {
         accounts: &'info [AccountInfo<'info>],
         data: &[u8],
     ) -> Result<()> {
-        // Wormhole Executor resolver discriminator (sha256("global:resolve_execute_vaa_v1")[..8]
-        // with the Executor SDK's own namespace — NOT the Anchor-generated one).
+        // Wormhole Executor resolver discriminator:
+        // sha256("executor-account-resolver:execute-vaa-v1")[..8] = 0x94b8a9decf089a7f
+        // Defined as RESOLVER_EXECUTE_VAA_V1 in executor-account-resolver-svm.
+        // Anchor 0.31+ with `interface-instructions` feature would allow replacing this
+        // fallback with `#[instruction(discriminator = &RESOLVER_EXECUTE_VAA_V1)]` on the
+        // named instruction, but that requires upgrading solana-program to 2.x (out of scope).
         const EXECUTOR_DISCRIMINATOR: [u8; 8] = [148, 184, 169, 222, 207, 8, 154, 127];
 
         if data.len() >= 8 && data[..8] == EXECUTOR_DISCRIMINATOR {
