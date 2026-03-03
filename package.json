@@ -8,14 +8,6 @@
     "test": "anchor test",
     "e2e:test": "tsx e2e/test.ts"
   },
-  "keywords": [
-    "wormhole",
-    "executor",
-    "cross-chain",
-    "solana",
-    "anchor",
-    "sepolia"
-  ],
   "author": "",
   "license": "MIT",
   "dependencies": {

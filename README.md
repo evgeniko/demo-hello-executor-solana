@@ -77,13 +77,6 @@ Sepolia                                Solana Devnet
 └────────────────┘                    └────────────────┘
 ```
 
-## Deployed Contracts
-
-| Chain | Address |
-|-------|---------|
-| Solana Devnet | `7eiTqf1b1dNwpzn27qEr4eGSWnuon2fJTbnTuWcFifZG` |
-| Sepolia (EVM peer) | `0x15cEeB2C089D19E754463e1697d69Ad11A6e8841` |
-
 ## Key Concepts
 
 ### 1. Cross-VM Peer Registration
@@ -122,10 +115,14 @@ const SOLANA_MSG_VALUE_LAMPORTS = 15_000_000n; // ~0.015 SOL
 
 ### 3. Wormhole Chain IDs
 
+These are permanent Wormhole protocol identifiers — they never change regardless of deployment.
+Full reference: [wormhole.com/docs/products/reference/chain-ids](https://wormhole.com/docs/products/reference/chain-ids/)
+
 | Chain | ID |
 |-------|-----|
 | Solana | 1 |
 | Sepolia | 10002 |
+| Ethereum mainnet | 2 |
 
 ## Project Structure
 
@@ -163,10 +160,29 @@ PRIVATE_KEY_SEPOLIA=0x...
 
 ## Important Limits
 
-| Constraint | Value | Notes |
-|-----------|-------|-------|
-| Max message length (Solana receiver) | **512 bytes** | Enforced by `receive_greeting.rs` (`GREETING_MAX_LENGTH`). EVM contracts have no such limit — oversized messages sent from EVM will fail on Solana with `InvalidMessage`. |
-| Max message length (EVM receiver) | No limit in demo | Standard EVM gas limits apply. |
+### 512-byte message cap on the Solana receiver
+
+The `Received` account — created on-chain when a message arrives on Solana — is allocated a fixed size at init time:
+
+```
+ 8 bytes  discriminator
+ 4 bytes  batch_id
+32 bytes  VAA hash
+ 4 bytes  message Vec length prefix
+512 bytes message payload  ← GREETING_MAX_LENGTH
+─────────────────────────
+560 bytes total
+```
+
+Because Solana accounts cannot grow after creation, this cap is set at deployment and can only be raised via a program upgrade.
+
+**When does it affect you?**
+
+| Sender → Receiver | Effect |
+|---|---|
+| **EVM → Solana** | ⚠️ EVM enforces no limit at send time. If the payload exceeds 512 bytes, `receive_greeting` returns `InvalidMessage` and the relay transaction fails. |
+| **Solana → Solana** | ✅ Rejected at send time — `HelloExecutorMessage::serialize` refuses > 512 bytes before the VAA is posted. |
+| **Solana → EVM** | ✅ EVM receiver has no cap. Solana's 512-byte send limit still applies upstream, so you can never exceed it from the Solana side. |
 
 ## Related
 

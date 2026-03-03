@@ -4,7 +4,19 @@ use wormhole_io::Readable;
 
 /// Payload ID for Alive message (sent during initialization)
 const PAYLOAD_ID_ALIVE: u8 = 0;
-/// Payload ID for Hello/Greeting message
+
+/// Payload ID for Hello/Greeting message.
+///
+/// **Why this prefix exists:**
+/// Solana-to-Solana (and Solana-to-any-structured-receiver) messages use a tagged
+/// format — `0x01 | u16_be_len | message_bytes` — so receivers can distinguish
+/// Alive (init) from Hello (greeting) payloads without ambiguity.
+///
+/// **EVM side does NOT strip this prefix.**
+/// EVM receivers (`HelloWormhole.sol`) treat the entire VAA payload as raw bytes.
+/// When a message travels Solana → EVM, the EVM contract stores and emits
+/// `0x01 | len | text`, not just `text`. This is acceptable for a demo;
+/// a production integration would strip the prefix in the EVM receiver.
 const PAYLOAD_ID_HELLO: u8 = 1;
 
 /// Maximum length of a greeting message in bytes

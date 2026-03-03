@@ -15,7 +15,8 @@ pub mod state;
 
 // TODO(redeploy): Update this ID when redeploying with a new keypair.
 // Run: solana-keygen pubkey target/deploy/hello_executor-keypair.json
-// Then update this value AND [programs.devnet] in Anchor.toml to match.
+// Then update this value AND the matching [programs.<network>] entry in Anchor.toml
+// (e.g. [programs.devnet] for Devnet, [programs.mainnet] for Mainnet).
 declare_id!("7eiTqf1b1dNwpzn27qEr4eGSWnuon2fJTbnTuWcFifZG");
 
 #[program]
